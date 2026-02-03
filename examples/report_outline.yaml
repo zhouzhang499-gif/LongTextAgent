@@ -1,0 +1,48 @@
+# 示例报告大纲：AI行业分析
+# 此文件演示如何使用 report 模式生成研究报告
+
+title: 2026年AI Agent行业分析报告
+
+# 类型标识（可选，也可通过命令行 --mode 指定）
+type: report
+
+# 报告背景设定
+settings:
+  audience: |
+    目标读者：科技行业投资者、企业技术决策者、AI从业者
+  scope: |
+    研究范围：全球AI Agent市场，重点关注中国和美国市场
+  methodology: |
+    研究方法：行业调研、专家访谈、公开数据分析
+
+# 报告章节
+chapters:
+  - title: 一、行业概述
+    brief: |
+      介绍AI Agent的定义、发展历程、当前市场规模。
+      分析AI Agent与传统AI应用的区别，以及为何2025年成为"Agent元年"。
+    words: 2000
+  
+  - title: 二、技术架构分析
+    brief: |
+      解析AI Agent的核心技术栈：大模型基座、规划推理、工具调用、记忆系统。
+      对比主流技术方案：LangChain、AutoGen、CrewAI的优劣势。
+    words: 2500
+  
+  - title: 三、应用场景与案例
+    brief: |
+      梳理AI Agent的主要应用场景：编程辅助、客服自动化、数据分析、内容创作。
+      分析典型成功案例：GitHub Copilot、Cursor、Devin等。
+    words: 2500
+  
+  - title: 四、竞争格局
+    brief: |
+      分析全球主要玩家：OpenAI、Anthropic、Google、微软。
+      国内竞争格局：字节、阿里、百度、月之暗面等布局。
+    words: 2000
+  
+  - title: 五、挑战与展望
+    brief: |
+      讨论当前面临的挑战：可靠性、安全性、成本控制。
+      未来发展趋势预测：多Agent协作、垂直领域Agent、边缘部署。
+    words: 1500

@@ -1,0 +1,11 @@
+# LongTextAgent 依赖
+# LLM 客户端
+openai>=1.0.0        # DeepSeek 兼容 OpenAI API
+
+# 配置和工具
+pyyaml>=6.0          # YAML 配置解析
+tiktoken>=0.5.0      # Token 计数
+rich>=13.0.0         # 终端美化输出
+
+# 测试
+pytest>=7.0.0

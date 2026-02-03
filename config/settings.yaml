@@ -1,0 +1,46 @@
+# LongTextAgent 配置文件
+
+# LLM 配置
+llm:
+  provider: deepseek
+  # API Key 从环境变量读取: DEEPSEEK_API_KEY
+  api_key: ${DEEPSEEK_API_KEY}
+  base_url: https://api.deepseek.com
+  model: deepseek-chat
+  temperature: 0.7
+  max_tokens: 4096
+
+# 生成参数
+generation:
+  # 每个子任务的目标字数
+  words_per_section: 2500
+  # 最小/最大字数容差
+  min_words_tolerance: 0.8   # 2000字
+  max_words_tolerance: 1.2   # 3000字
+  # 摘要最大长度（字）
+  summary_max_words: 300
+
+# 上下文管理
+context:
+  # 保留最近多少章的摘要
+  recent_summaries_count: 5
+  # 上下文最大 Token 数
+  max_context_tokens: 8000
+
+# 一致性检查
+consistency:
+  # 是否启用
+  enabled: true
+  # 检查项目
+  check_character_names: true
+  check_timeline: true
+  check_settings: true
+
+# 输出配置
+output:
+  # 输出目录
+  directory: ./output
+  # 文件名格式
+  filename_format: "{title}_{timestamp}.md"
+  # 是否保存中间结果
+  save_intermediate: true

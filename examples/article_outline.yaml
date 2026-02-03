@@ -1,0 +1,53 @@
+# 示例文章大纲：技术博客
+# 此文件演示如何使用 article 模式生成公众号/博客文章
+
+title: 从零开始理解AI Agent：程序员的入门指南
+
+type: article
+
+# 文章设定
+settings:
+  audience: |
+    目标读者：对AI感兴趣的程序员，有Python基础，想了解Agent开发
+  tone: |
+    语气风格：轻松专业，类似"阮一峰的网络日志"风格
+    多用代码示例和类比解释，避免过于学术化
+  platform: |
+    发布平台：微信公众号 / 掘金 / CSDN
+
+# 文章结构
+chapters:
+  - title: 引子：那些让你惊叹的AI应用
+    brief: |
+      从Cursor、Claude Artifacts等热门产品引入。
+      抛出问题：这些"能自己做事"的AI和普通ChatGPT有什么区别？
+      引出AI Agent的概念。
+    words: 800
+  
+  - title: 什么是AI Agent？
+    brief: |
+      用通俗的语言解释Agent的定义。
+      类比：如果LLM是"大脑"，那Agent就是有"手脚"的机器人。
+      核心组成：感知→思考→行动→反馈 循环。
+    words: 1200
+  
+  - title: 动手实践：用50行代码实现最简单的Agent
+    brief: |
+      提供一个Python代码示例。
+      实现一个能自动搜索+总结的简单Agent。
+      逐行解释代码，强调核心概念：工具调用、循环执行。
+    words: 1500
+  
+  - title: 进阶：如何让Agent更"聪明"
+    brief: |
+      介绍记忆机制：让Agent记住对话历史。
+      介绍规划能力：如何拆解复杂任务。
+      简单提及ReAct、CoT等技术（但不深入）。
+    words: 1200
+  
+  - title: 资源推荐与下一步
+    brief: |
+      推荐学习资源：官方文档、开源项目、教程。
+      鼓励读者动手实践，给出几个练手项目建议。
+      结尾call-to-action：欢迎留言讨论。
+    words: 800
