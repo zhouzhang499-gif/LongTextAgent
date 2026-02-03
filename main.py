@@ -14,6 +14,7 @@ project_root = Path(__file__).parent
 sys.path.insert(0, str(project_root))
 
 from pipeline.novel_pipeline import ContentPipeline
+from utils.llm_client import list_providers
 from rich.console import Console
 from rich.table import Table
 
@@ -37,6 +38,18 @@ def show_modes():
     
     for mode, desc in AVAILABLE_MODES.items():
         table.add_row(mode, desc)
+    
+    console.print(table)
+
+
+def show_providers():
+    """Show all supported LLM providers"""
+    table = Table(title="Supported LLM Providers")
+    table.add_column("Provider", style="cyan")
+    table.add_column("Description", style="white")
+    
+    for provider, desc in list_providers().items():
+        table.add_row(provider, desc)
     
     console.print(table)
 
@@ -165,14 +178,36 @@ def main():
     parser.add_argument(
         '--list-modes',
         action='store_true',
-        help='显示所有可用的生成模式'
+        help='Show all available modes'
+    )
+    
+    parser.add_argument(
+        '--provider', '-p',
+        choices=['deepseek', 'openai', 'claude', 'qwen', 'glm', 'moonshot', 'ollama', 'custom'],
+        help='LLM provider (overrides config)'
+    )
+    
+    parser.add_argument(
+        '--model',
+        help='Model name (overrides config)'
+    )
+    
+    parser.add_argument(
+        '--list-providers',
+        action='store_true',
+        help='Show all supported LLM providers'
     )
     
     args = parser.parse_args()
     
-    # 显示模式列表
+    # Show modes
     if args.list_modes:
         show_modes()
+        return
+    
+    # Show providers
+    if args.list_providers:
+        show_providers()
         return
     
     # 检查大纲文件

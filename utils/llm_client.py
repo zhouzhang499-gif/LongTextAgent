@@ -1,60 +1,157 @@
 """
 LLM 客户端封装
-支持 DeepSeek (OpenAI 兼容接口)
+支持多个提供商：DeepSeek、OpenAI、Claude、通义千问、智谱GLM、Moonshot
 """
 
 import os
-from openai import OpenAI
-from typing import Optional
+from typing import Optional, Dict, Any
 import tiktoken
+
+# 提供商配置
+PROVIDER_CONFIG = {
+    "deepseek": {
+        "base_url": "https://api.deepseek.com",
+        "env_key": "DEEPSEEK_API_KEY",
+        "default_model": "deepseek-chat"
+    },
+    "openai": {
+        "base_url": None,  # 使用默认
+        "env_key": "OPENAI_API_KEY",
+        "default_model": "gpt-4o-mini"
+    },
+    "claude": {
+        "base_url": "https://api.anthropic.com/v1",
+        "env_key": "ANTHROPIC_API_KEY",
+        "default_model": "claude-3-5-sonnet-20241022"
+    },
+    "qwen": {
+        "base_url": "https://dashscope.aliyuncs.com/compatible-mode/v1",
+        "env_key": "DASHSCOPE_API_KEY",
+        "default_model": "qwen-plus"
+    },
+    "glm": {
+        "base_url": "https://open.bigmodel.cn/api/paas/v4",
+        "env_key": "ZHIPU_API_KEY",
+        "default_model": "glm-4-flash"
+    },
+    "moonshot": {
+        "base_url": "https://api.moonshot.cn/v1",
+        "env_key": "MOONSHOT_API_KEY",
+        "default_model": "moonshot-v1-8k"
+    },
+    "ollama": {
+        "base_url": "http://localhost:11434/v1",
+        "env_key": None,
+        "default_model": "llama3.2"
+    },
+    "custom": {
+        "base_url": None,
+        "env_key": "LLM_API_KEY",
+        "default_model": "gpt-3.5-turbo"
+    }
+}
+
+
+def list_providers() -> Dict[str, str]:
+    """列出所有支持的提供商"""
+    return {
+        "deepseek": "DeepSeek - 性价比高，中文优秀",
+        "openai": "OpenAI GPT - 综合能力强",
+        "claude": "Anthropic Claude - 长文本和推理优秀",
+        "qwen": "通义千问 - 阿里云，中文优秀",
+        "glm": "智谱GLM - 清华系，中文优秀",
+        "moonshot": "Moonshot Kimi - 长上下文",
+        "ollama": "Ollama - 本地部署",
+        "custom": "自定义 - 兼容 OpenAI 格式的任意接口"
+    }
 
 
 class LLMClient:
-    """统一的 LLM 调用接口"""
+    """统一的 LLM 调用接口，支持多提供商"""
     
     def __init__(
         self,
         provider: str = "deepseek",
         api_key: Optional[str] = None,
         base_url: Optional[str] = None,
-        model: str = "deepseek-chat",
+        model: Optional[str] = None,
         temperature: float = 0.7,
         max_tokens: int = 4096
     ):
-        self.provider = provider
-        self.model = model
+        """
+        初始化 LLM 客户端
+        
+        Args:
+            provider: 提供商名称 (deepseek/openai/claude/qwen/glm/moonshot/ollama/custom)
+            api_key: API Key（可选，默认从环境变量读取）
+            base_url: API 地址（可选，默认使用提供商配置）
+            model: 模型名称（可选，默认使用提供商配置）
+            temperature: 温度参数
+            max_tokens: 最大生成 Token 数
+        """
+        self.provider = provider.lower()
         self.temperature = temperature
         self.max_tokens = max_tokens
+        
+        # 获取提供商配置
+        if self.provider not in PROVIDER_CONFIG:
+            raise ValueError(f"不支持的提供商: {provider}。支持的提供商: {list(PROVIDER_CONFIG.keys())}")
+        
+        config = PROVIDER_CONFIG[self.provider]
+        
+        # 设置模型
+        self.model = model or config["default_model"]
         
         # 获取 API Key
         if api_key and not api_key.startswith("${"):
             self.api_key = api_key
         else:
-            # 从环境变量读取
-            env_var = "DEEPSEEK_API_KEY" if provider == "deepseek" else "OPENAI_API_KEY"
-            self.api_key = os.getenv(env_var)
-            if not self.api_key:
-                raise ValueError(f"请设置环境变量 {env_var} 或在配置中提供 api_key")
+            env_var = config["env_key"]
+            if env_var:
+                self.api_key = os.getenv(env_var)
+                if not self.api_key:
+                    raise ValueError(f"请设置环境变量 {env_var} 或在配置中提供 api_key")
+            else:
+                self.api_key = "ollama"  # Ollama 不需要真实 key
         
         # 设置 base_url
-        if base_url:
-            self.base_url = base_url
-        elif provider == "deepseek":
-            self.base_url = "https://api.deepseek.com"
+        self.base_url = base_url or config["base_url"]
+        
+        # 根据提供商选择客户端
+        if self.provider == "claude":
+            self._init_anthropic_client()
         else:
-            self.base_url = None
+            self._init_openai_client()
         
-        # 初始化客户端
-        self.client = OpenAI(
-            api_key=self.api_key,
-            base_url=self.base_url
-        )
-        
-        # Token 计数器（使用 cl100k_base 作为近似）
+        # Token 计数器
         try:
             self.tokenizer = tiktoken.get_encoding("cl100k_base")
         except Exception:
             self.tokenizer = None
+    
+    def _init_openai_client(self):
+        """初始化 OpenAI 兼容客户端"""
+        from openai import OpenAI
+        self.client = OpenAI(
+            api_key=self.api_key,
+            base_url=self.base_url
+        )
+        self.client_type = "openai"
+    
+    def _init_anthropic_client(self):
+        """初始化 Anthropic 客户端"""
+        try:
+            from anthropic import Anthropic
+            self.client = Anthropic(api_key=self.api_key)
+            self.client_type = "anthropic"
+        except ImportError:
+            # 如果没有安装 anthropic，尝试使用 OpenAI 格式
+            from openai import OpenAI
+            self.client = OpenAI(
+                api_key=self.api_key,
+                base_url=self.base_url
+            )
+            self.client_type = "openai"
     
     def generate(
         self,
@@ -68,11 +165,23 @@ class LLMClient:
         Args:
             prompt: 用户提示
             system_prompt: 系统提示（可选）
-            max_tokens: 最大生成 Token 数（可选，默认使用初始化时的值）
+            max_tokens: 最大生成 Token 数（可选）
         
         Returns:
             生成的文本内容
         """
+        if self.client_type == "anthropic":
+            return self._generate_anthropic(prompt, system_prompt, max_tokens)
+        else:
+            return self._generate_openai(prompt, system_prompt, max_tokens)
+    
+    def _generate_openai(
+        self,
+        prompt: str,
+        system_prompt: Optional[str] = None,
+        max_tokens: Optional[int] = None
+    ) -> str:
+        """使用 OpenAI 格式生成"""
         messages = []
         
         if system_prompt:
@@ -88,6 +197,26 @@ class LLMClient:
         )
         
         return response.choices[0].message.content
+    
+    def _generate_anthropic(
+        self,
+        prompt: str,
+        system_prompt: Optional[str] = None,
+        max_tokens: Optional[int] = None
+    ) -> str:
+        """使用 Anthropic 格式生成"""
+        kwargs = {
+            "model": self.model,
+            "max_tokens": max_tokens or self.max_tokens,
+            "messages": [{"role": "user", "content": prompt}]
+        }
+        
+        if system_prompt:
+            kwargs["system"] = system_prompt
+        
+        response = self.client.messages.create(**kwargs)
+        
+        return response.content[0].text
     
     def summarize(self, text: str, max_words: int = 300) -> str:
         """
@@ -123,7 +252,17 @@ class LLMClient:
         if self.tokenizer:
             return len(self.tokenizer.encode(text))
         else:
-            # 粗略估算：中文约 1.5 token/字，英文约 0.25 token/word
+            # 粗略估算
             chinese_chars = len([c for c in text if '\u4e00' <= c <= '\u9fff'])
             other_chars = len(text) - chinese_chars
             return int(chinese_chars * 1.5 + other_chars * 0.3)
+    
+    def get_info(self) -> Dict[str, Any]:
+        """获取客户端信息"""
+        return {
+            "provider": self.provider,
+            "model": self.model,
+            "base_url": self.base_url,
+            "temperature": self.temperature,
+            "max_tokens": self.max_tokens
+        }
