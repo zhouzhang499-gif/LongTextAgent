@@ -42,6 +42,14 @@ python main.py --mode article --outline examples/article_outline.yaml --title "�
 
 # 查看所有模式
 python main.py --list-modes
+### 自我矫正 (Self-Correction)
+
+```bash
+# 生成后自动进行检查
+python main.py --outline outline.yaml --auto-check
+
+# 检查已有文件
+python main.py --check-file output/novel.md
 ```
 
 ## 📋 支持的模式

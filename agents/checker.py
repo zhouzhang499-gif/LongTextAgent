@@ -6,6 +6,8 @@
 from typing import List, Dict, Optional, Tuple
 from dataclasses import dataclass
 from enum import Enum
+import json
+import re
 
 from utils.llm_client import LLMClient
 from memory.settings_store import SettingsStore
@@ -39,6 +41,9 @@ class ConsistencyIssue:
     location: str  # 问题位置描述
     suggestion: str  # 修改建议
     related_content: str = ""  # 相关内容片段
+    original_text: str = ""    # 原文片段（用于修复）
+    fixed_text: str = ""       # 修复后的文本（用于修复）
+    auto_fixable: bool = False # 是否可自动修复
 
 
 @dataclass
@@ -405,5 +410,128 @@ class ConsistencyChecker:
                 lines.append(f"    描述: {issue.description}")
                 lines.append(f"    建议: {issue.suggestion}")
         
-        lines.append("\n" + "=" * 50)
-        return "\n".join(lines)
+    def check_full_text(self, content: str, title: str = "") -> List[ConsistencyIssue]:
+        """全文连贯性检查（生成后）"""
+        issues = []
+        
+        # 构建提示词
+        prompt = self._build_fulltext_check_prompt(content, title)
+        
+        try:
+            response = self.llm.generate(prompt)
+            issues = self._parse_check_response(response)
+        except Exception as e:
+            print(f"全文检查失败: {e}")
+            
+        return issues
+
+    def auto_fix(self, content: str, issues: List[ConsistencyIssue]) -> str:
+        """自动修复内容"""
+        fixed_content = content
+        
+        # 过滤可修复的问题
+        fixable = [i for i in issues if i.auto_fixable and i.original_text and i.fixed_text]
+        
+        for issue in fixable:
+            if issue.original_text in fixed_content:
+                fixed_content = fixed_content.replace(issue.original_text, issue.fixed_text)
+                
+        return fixed_content
+
+    def _build_fulltext_check_prompt(self, content: str, title: str) -> str:
+        """构建全文检查提示词"""
+        max_chars = 25000
+        if len(content) > max_chars:
+            part_len = max_chars // 3
+            content = (
+                content[:part_len] + 
+                "\n\n[...中间部分省略...]\n\n" + 
+                content[len(content)//2 - part_len//2:len(content)//2 + part_len//2] +
+                "\n\n[...中间部分省略...]\n\n" +
+                content[-part_len:]
+            )
+        
+        return f'''请对以下小说/文章进行全文连贯性检查。
+
+作品标题：{title or "未命名"}
+
+检查维度：
+1. 人物一致性 - 人物名字、性格、外貌是否前后一致
+2. 情节逻辑 - 事件发展是否合理，因果关系是否成立
+3. 时间线 - 时间顺序是否正确
+4. 场景设定 - 场景描写是否矛盾
+5. 伏笔回收 - 伏笔是否得到呼应
+
+请严格按照以下 JSON 格式输出检查结果：
+
+```json
+{{
+  "issues": [
+    {{
+      "type": "人物一致性|情节逻辑|时间线|场景设定|伏笔回收",
+      "severity": "高|中|低",
+      "location": "问题所在章节",
+      "description": "问题描述",
+      "suggestion": "修改建议",
+      "original": "问题原文（简短）",
+      "fixed": "修改后文本"
+    }}
+  ],
+  "summary": "总体评价"
+}}
+```
+
+如果没有发现问题，issues 数组为空。
+
+待检查内容：
+
+{content}
+'''
+
+    def _parse_check_response(self, response: str) -> List[ConsistencyIssue]:
+        """解析检查响应"""
+        issues = []
+        try:
+            json_match = re.search(r'```json\s*(.*?)\s*```', response, re.DOTALL)
+            if json_match:
+                data = json.loads(json_match.group(1))
+            else:
+                data = json.loads(response)
+            
+            raw_issues = data.get("issues", [])
+            summary = data.get("summary", "")
+            
+            # 映射类型 string 到 enum
+            type_map = {
+                "人物一致性": IssueType.CHARACTER_TRAIT,
+                "情节逻辑": IssueType.LOGIC,
+                "时间线": IssueType.TIMELINE,
+                "场景设定": IssueType.SETTING,
+                "伏笔回收": IssueType.PLOT_HOLE
+            }
+            
+            severity_map = {
+                "高": IssueSeverity.HIGH,
+                "中": IssueSeverity.MEDIUM,
+                "低": IssueSeverity.LOW
+            }
+            
+            for item in raw_issues:
+                issue_type = type_map.get(item.get("type"), IssueType.CONTINUITY)
+                severity = severity_map.get(item.get("severity"), IssueSeverity.MEDIUM)
+                
+                issues.append(ConsistencyIssue(
+                    type=issue_type,
+                    severity=severity,
+                    description=item.get("description", ""),
+                    location=item.get("location", ""),
+                    suggestion=item.get("suggestion", ""),
+                    original_text=item.get("original", ""),
+                    fixed_text=item.get("fixed", ""),
+                    auto_fixable=bool(item.get("original") and item.get("fixed"))
+                ))
+                
+        except Exception as e:
+            print(f"解析检查结果失败: {e}")
+            
+        return issues

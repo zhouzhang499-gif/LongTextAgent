@@ -198,6 +198,17 @@ def main():
         help='Show all supported LLM providers'
     )
     
+    parser.add_argument(
+        '--check-file',
+        help='检查已有文件的连贯性（输入文件路径）'
+    )
+    
+    parser.add_argument(
+        '--auto-check',
+        action='store_true',
+        help='生成完成后自动进行连贯性检查'
+    )
+    
     args = parser.parse_args()
     
     # Show modes
@@ -210,6 +221,38 @@ def main():
         show_providers()
         return
     
+    # 检查已有文件
+    if args.check_file:
+        if not os.path.exists(args.check_file):
+            console.print(f"[red]错误: 文件不存在: {args.check_file}[/red]")
+            sys.exit(1)
+            
+        console.print(f"[cyan]正在检查文件: {args.check_file}[/cyan]")
+        
+        # 创建管道
+        try:
+            pipeline = ContentPipeline(
+                config_path=args.config,
+                modes_path=args.modes_config,
+                mode=args.mode,
+                enable_consistency_check=True
+            )
+        except ValueError as e:
+            console.print(f"[red]配置错误: {e}[/red]")
+            console.print("[yellow]提示: 请设置环境变量 DEEPSEEK_API_KEY[/yellow]")
+            sys.exit(1)
+            
+        # 读取文件内容
+        with open(args.check_file, 'r', encoding='utf-8') as f:
+            content = f.read()
+            
+        # 获取文件名作为标题
+        title = os.path.splitext(os.path.basename(args.check_file))[0]
+        
+        # 运行交互式检查
+        pipeline.check_and_fix_interactive(content, title)
+        return
+
     # 检查大纲文件
     if not args.outline:
         console.print("[red]错误: 请指定大纲文件 (--outline)[/red]")
@@ -248,6 +291,10 @@ def main():
         )
         
         console.print("\n[green]✓ 生成成功！[/green]")
+        
+        # 生成完成后自动检查（如果启用）
+        if args.auto_check and result:
+            pipeline.check_and_fix_interactive(result, args.title)
         
     except KeyboardInterrupt:
         console.print("\n[yellow]用户中断[/yellow]")

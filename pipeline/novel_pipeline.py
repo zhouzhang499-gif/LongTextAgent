@@ -408,7 +408,195 @@ class ContentPipeline:
     def check_existing_content(self, content: str) -> CheckResult:
         """检查已有内容的一致性"""
         return self.checker.check_content(content)
+    
+    def check_and_fix_interactive(self, content: str, title: str = "") -> str:
+        """
+        交互式检查和修复
+        
+        生成完成后调用，分析全文并提供交互式修复选项
+        
+        Args:
+            content: 生成的全文内容
+            title: 作品标题
+        
+        Returns:
+            str: 修复后的内容（如果用户选择修复）或原始内容
+        """
+        from rich.prompt import Prompt
+        from rich.table import Table
+        
+        console.print("\n[bold blue]🔍 全文连贯性检查[/bold blue]")
+        console.print("正在分析...\n")
+        
+        # 调用 Checker 进行检查
+        issues = self.checker.check_full_text(content, title)
+        
+        if not issues:
+            console.print("[green]✅ 未发现连贯性问题！文本质量良好。[/green]\n")
+            return content
+        
+        # 显示问题表格
+        table = Table(title=f"发现 {len(issues)} 个问题")
+        table.add_column("ID", style="cyan", width=4)
+        table.add_column("类型", style="magenta", width=12)
+        table.add_column("严重", width=6)
+        table.add_column("位置", width=10)
+        table.add_column("描述", width=40)
+        
+        for i, issue in enumerate(issues, 1):
+            severity_style = {"高": "red", "中": "yellow", "低": "green"}.get(issue.severity.value, "")
+            table.add_row(
+                str(i),
+                issue.type.value,
+                f"[{severity_style}]{issue.severity.value}[/{severity_style}]",
+                issue.location,
+                issue.description[:40]
+            )
+        
+        console.print(table)
+        
+        # 用户选择
+        console.print("[bold]请选择操作：[/bold]")
+        console.print("  [A] AI 自动修复所有问题")
+        console.print("  [B] 选择性修复（输入问题编号，如: 1,3）")
+        console.print("  [C] 导出检查报告")
+        console.print("  [D] 跳过，保持原文\n")
+        
+        choice = Prompt.ask("请输入选项", choices=["A", "B", "C", "D", "a", "b", "c", "d"])
+        choice = choice.upper()
+        
+        if choice == "A":
+            return self._auto_fix_with_checker(content, issues, title)
+        elif choice == "B":
+            ids_str = Prompt.ask("请输入要修复的问题编号（用逗号分隔）")
+            try:
+                ids = [int(x.strip()) for x in ids_str.split(",")]
+                selected = [issues[i-1] for i in ids if 0 < i <= len(issues)]
+                return self._auto_fix_with_checker(content, selected, title)
+            except (ValueError, IndexError):
+                console.print("[red]输入格式错误[/red]")
+                return content
+        elif choice == "C":
+            self._export_checker_report(issues, title)
+            return content
+        else:
+            console.print("⏭️ 跳过修复，保持原文\n")
+            return content
+    
+    def _auto_fix_with_checker(self, content: str, issues: list, title: str) -> str:
+        """调用 Checker 进行修复"""
+        console.print(f"\n[yellow]🔧 正在修复 {len(issues)} 个问题...[/yellow]")
+        
+        fixed_content = self.checker.auto_fix(content, issues)
+        
+        # 简单判断是否有变动
+        if fixed_content != content:
+            console.print(f"[green]✅ 修复完成！[/green]\n")
+            # 保存修复后的文件
+            output_path = self.save_output(fixed_content, f"{title}_已修复")
+            console.print(f"[green]📄 已保存修复版本: {output_path}[/green]\n")
+        else:
+            console.print("[yellow]⚠️ 没有进行任何修改（可能问题不可自动修复）[/yellow]\n")
+        
+        return fixed_content
+    
+    def _export_checker_report(self, issues: list, title: str):
+        """导出 Checker 报告"""
+        import os
+        from datetime import datetime
+        
+        os.makedirs(self.output_dir, exist_ok=True)
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        report_path = os.path.join(self.output_dir, f"{title}_检查报告_{timestamp}.md")
+        
+        with open(report_path, "w", encoding="utf-8") as f:
+            f.write(f"# 📋 {title} 连贯性检查报告\n\n")
+            f.write(f"生成时间: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n\n")
+            f.write(f"## 发现 {len(issues)} 个问题\n\n")
+            
+            for i, issue in enumerate(issues, 1):
+                severity_icon = {"高": "🔴", "中": "🟡", "低": "🟢"}.get(issue.severity.value, "⚪")
+                f.write(f"### {severity_icon} 问题 {i}: {issue.type.value}\n")
+                f.write(f"- **位置**: {issue.location}\n")
+                f.write(f"- **严重程度**: {issue.severity.value}\n")
+                f.write(f"- **描述**: {issue.description}\n")
+                f.write(f"- **建议**: {issue.suggestion}\n")
+                if issue.auto_fixable:
+                    f.write(f"- **可自动修复**: 是\n")
+                f.write("\n")
+        
+        console.print(f"[green]📄 报告已导出: {report_path}[/green]\n")
 
 
+        from rich.prompt import Prompt
+        from rich.table import Table
+        
+        console.print("\n[bold blue]🔍 全文连贯性检查[/bold blue]")
+        console.print("正在分析...\n")
+        
+        # 构建检查提示词
+        check_prompt = self._build_fulltext_check_prompt(content, title)
+        
+        # 调用 LLM 进行检查
+        try:
+            response = self.llm.generate(check_prompt)
+            issues = self._parse_check_response(response)
+        except Exception as e:
+            console.print(f"[red]检查失败: {e}[/red]")
+            return content
+        
+        if not issues:
+            console.print("[green]✅ 未发现连贯性问题！文本质量良好。[/green]\n")
+            return content
+        
+        # 显示问题表格
+        table = Table(title=f"发现 {len(issues)} 个问题")
+        table.add_column("ID", style="cyan", width=4)
+        table.add_column("类型", style="magenta", width=10)
+        table.add_column("严重", width=4)
+        table.add_column("位置", width=10)
+        table.add_column("描述", width=40)
+        
+        for i, issue in enumerate(issues, 1):
+            severity_style = {"高": "red", "中": "yellow", "低": "green"}.get(issue.get("severity", "中"), "")
+            table.add_row(
+                str(i),
+                issue.get("type", "未知"),
+                f"[{severity_style}]{issue.get('severity', '中')}[/{severity_style}]",
+                issue.get("location", ""),
+                issue.get("description", "")[:40]
+            )
+        
+        console.print(table)
+        console.print(f"\n📝 总结: {issues[0].get('summary', '请检查上述问题')}\n" if issues else "")
+        
+        # 用户选择
+        console.print("[bold]请选择操作：[/bold]")
+        console.print("  [A] AI 自动修复所有问题")
+        console.print("  [B] 选择性修复（输入问题编号，如: 1,3）")
+        console.print("  [C] 导出检查报告")
+        console.print("  [D] 跳过，保持原文\n")
+        
+        choice = Prompt.ask("请输入选项", choices=["A", "B", "C", "D", "a", "b", "c", "d"])
+        choice = choice.upper()
+        
+        if choice == "A":
+            return self._auto_fix_all(content, issues, title)
+        elif choice == "B":
+            ids_str = Prompt.ask("请输入要修复的问题编号（用逗号分隔）")
+            try:
+                ids = [int(x.strip()) for x in ids_str.split(",")]
+                selected = [issues[i-1] for i in ids if 0 < i <= len(issues)]
+                return self._auto_fix_all(content, selected, title)
+            except (ValueError, IndexError):
+                console.print("[red]输入格式错误[/red]")
+                return content
+        elif choice == "C":
+            self._export_report(issues, title)
+            return content
+        else:
+            console.print("⏭️ 跳过修复，保持原文\n")
+            return content
+    
 # 别名，保持向后兼容
 NovelPipeline = ContentPipeline
