@@ -1,11 +1,17 @@
 # LongTextAgent 依赖
 # LLM 客户端
 openai>=1.0.0        # DeepSeek 兼容 OpenAI API
+anthropic>=0.18.0    # Claude (可选)
 
 # 配置和工具
 pyyaml>=6.0          # YAML 配置解析
 tiktoken>=0.5.0      # Token 计数
 rich>=13.0.0         # 终端美化输出
+
+# API 服务
+fastapi>=0.100.0     # Web 框架
+uvicorn>=0.23.0      # ASGI 服务器
+pydantic>=2.0.0      # 数据验证
 
 # 测试
 pytest>=7.0.0
