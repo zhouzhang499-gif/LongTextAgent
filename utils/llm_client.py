@@ -4,8 +4,48 @@ LLM 客户端封装
 """
 
 import os
-from typing import Optional, Dict, Any
+import time
+import logging
+from typing import Optional, Dict, Any, Callable
+from functools import wraps
 import tiktoken
+
+# 配置基本日志，如果外部没有配置的话
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+logger = logging.getLogger("llm_client")
+
+def with_retry(max_retries: int = 3, base_delay: float = 2.0, max_delay: float = 60.0):
+    """
+    带指数退避的重试装饰器
+    
+    Args:
+        max_retries: 最大重试次数
+        base_delay: 基础延迟时间（秒）
+        max_delay: 最大延迟时间（秒）
+    """
+    def decorator(func: Callable):
+        @wraps(func)
+        def wrapper(*args, **kwargs):
+            retries = 0
+            delay = base_delay
+            while True:
+                try:
+                    return func(*args, **kwargs)
+                except Exception as e:
+                    retries += 1
+                    if retries > max_retries:
+                        logger.error(f"函数 {func.__name__} 经过 {max_retries} 次重试后仍失败: {str(e)}")
+                        raise e
+                    
+                    # 针对特定的可能不需要重试的错误可以添加过滤，比如 auth 错误 (401/403)
+                    # 此处目前为了简单和健同时，捕获所有基础异常进行重试
+                    logger.warning(f"函数 {func.__name__} 调用失败 ({str(e)})。正在进行第 {retries}/{max_retries} 次重试，等待 {delay} 秒...")
+                    time.sleep(delay)
+                    
+                    # 指数退避，并设置上限
+                    delay = min(delay * 2, max_delay)
+        return wrapper
+    return decorator
 
 # 提供商配置
 PROVIDER_CONFIG = {
@@ -175,6 +215,7 @@ class LLMClient:
         else:
             return self._generate_openai(prompt, system_prompt, max_tokens)
     
+    @with_retry(max_retries=3, base_delay=2.0)
     def _generate_openai(
         self,
         prompt: str,
@@ -198,6 +239,7 @@ class LLMClient:
         
         return response.choices[0].message.content
     
+    @with_retry(max_retries=3, base_delay=2.0)
     def _generate_anthropic(
         self,
         prompt: str,
