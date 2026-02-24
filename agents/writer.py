@@ -3,7 +3,8 @@ Writer Agent - 内容生成器（多模式版本）
 支持多种文档类型：小说、报告、文章、技术文档等
 """
 
-from typing import List, Optional, Dict
+import concurrent.futures
+from typing import List, Optional, Dict, Tuple
 from dataclasses import dataclass
 import os
 import yaml
@@ -11,6 +12,7 @@ import yaml
 from utils.llm_client import LLMClient
 from utils.text_utils import count_words
 from agents.planner import SubTask, Chapter, ContentPlan
+from agents.drama_evaluator import DramaEvaluator, RejectionException
 
 
 @dataclass
@@ -92,16 +94,21 @@ class Writer:
     def __init__(
         self,
         llm: LLMClient,
+        evaluator_llm: Optional[LLMClient] = None,
         mode: str = "novel",
         mode_config: Optional[ModeConfig] = None,
         max_context_tokens: int = 8000
     ):
         self.llm = llm
+        self.evaluator_llm = evaluator_llm or llm  # Fallback to standard llm if not provided
         self.max_context_tokens = max_context_tokens
         
         # 加载模式配置
         self.mode_config = mode_config or ModeConfig()
         self.set_mode(mode)
+        
+        # Drama 专属：实例化评估器 (使用裁判专用的 LLM)
+        self.drama_evaluator = DramaEvaluator(self.evaluator_llm)
     
     def set_mode(self, mode: str):
         """设置写作模式"""
@@ -253,41 +260,188 @@ class Writer:
         self,
         subtask: SubTask,
         context: str,
-        style_guide: str = ""
+        style_guide: str = "",
+        max_retries: int = 2
     ) -> GeneratedSection:
         """
-        生成单个段落
-        
-        Args:
-            subtask: 子任务
-            context: 上下文信息
-            style_guide: 写作风格指导（可选）
-        
-        Returns:
-            GeneratedSection 对象
+        生成单个段落，结合 ToT 质量验证与滑动窗口续写状态机，绝对保证字数达标。
         """
         system_prompt = self.get_system_prompt(style_guide)
         
-        user_prompt = f"""{context}
+        target_words = subtask.target_words
+        initial_target = min(1200, target_words) # 初次并发生成只要求 1200 字左右，保质量
 
-请开始创作，目标字数约 {subtask.target_words} 字。
-直接输出内容，不需要标题或其他说明。"""
+        user_prompt_base = f"""{context}
 
-        # 生成内容
-        content = self.llm.generate(
-            prompt=user_prompt,
-            system_prompt=system_prompt,
-            max_tokens=subtask.target_words * 2
-        )
+请开始创作本章节的【开篇与核心冲突】部分，目标字数约 {initial_target} 字左右。
+剧情尚未结束，请务必留下悬念，不要急于写结局！
+直接输出内容，不需要标题或其他说明。
+警告：绝对禁止在正文中夹杂任何诸如【黄金三秒】、【拒绝水文】、【反转】等结构性标签或元注释，必须只输出纯粹沉浸的故事正文！"""
+
+        retries = 0
+        current_feedback_directive = ""
+        final_content = ""
+
+        # ToT 分支数量
+        number_of_branches = 3 if self.mode == 'drama' else 1
         
-        # 统计字数
-        word_count = count_words(content)
+        try:
+            from rich.console import Console
+            console = Console()
+        except ImportError:
+            class DummyConsole:
+                def print(self, *args, **kwargs): pass
+            console = DummyConsole()
+
+        # ==========================================
+        # 第一阶段：初始高潮爆点生成 (Tree of Thoughts)
+        # ==========================================
+        while retries <= max_retries:
+            current_user_prompt = user_prompt_base
+            if current_feedback_directive:
+                current_user_prompt += f"\n\n【注意！这是重写请求。此前所有版本均未达标。裁判总监集体批示】：\n{current_feedback_directive}\n请务必吸收以上意见进行多分支探索重写！"
+
+            if self.mode == 'drama':
+                console.print(f"      [dim]正在迸发灵感... (并行生成 {number_of_branches} 个剧情走向，第 {retries+1} 次迭代)[/dim]")
+                
+            branches = []
+            
+            def _generate_branch(branch_idx):
+                branch_prompt = current_user_prompt
+                if number_of_branches > 1:
+                    branch_prompt += f"\n(这是分支思路方案 #{branch_idx + 1}，请放开思考，给出你觉得最爽快、最炸裂的发展)"
+                
+                return self.llm.generate(
+                    prompt=branch_prompt,
+                    system_prompt=system_prompt,
+                    max_tokens=initial_target * 2
+                )
+
+            # 多线程并发生成分支
+            with concurrent.futures.ThreadPoolExecutor(max_workers=number_of_branches) as executor:
+                future_to_branch = {executor.submit(_generate_branch, i): i for i in range(number_of_branches)}
+                for future in concurrent.futures.as_completed(future_to_branch):
+                    try:
+                        branches.append(future.result())
+                    except Exception as e:
+                        console.print(f"      [red]分支生成失败: {e}[/red]")
+                        
+            if not branches:
+                current_feedback_directive = "生成请求全部失败，请重试。"
+                retries += 1
+                if retries > max_retries:
+                    console.print("      [red]❌ 致命错误：达到最大重试次数，且所有的生成请求均失败！[/red]")
+                    final_content = "【系统提示：因大模型 API 多次调用失败，此处内容生成缺失，请检查网络或 API 密钥配置。】"
+                    break
+                continue
+
+            # 只有非 drama 才直接跳出
+            if self.mode != 'drama':
+                final_content = branches[0]
+                break
+                
+            # Drama 模式下的 ToT 评估
+            console.print(f"      [dim]开始对 {len(branches)} 条分支进行严苛打分...[/dim]")
+            evaluated_branches = []
+            
+            def _evaluate(content):
+                return self.drama_evaluator.evaluate_section(content) + (content,)
+                
+            with concurrent.futures.ThreadPoolExecutor(max_workers=len(branches)) as executor:
+                eval_futures = [executor.submit(_evaluate, b) for b in branches]
+                for future in concurrent.futures.as_completed(eval_futures):
+                    try:
+                        evaluated_branches.append(future.result())
+                    except Exception as e:
+                        pass
+            
+            if not evaluated_branches:
+                current_feedback_directive = "评估过程异常，请重试。"
+                retries += 1
+                if retries > max_retries:
+                    console.print("      [yellow]⚠️ 评估完全失效且达到最大重试次数，被迫采纳未评估的分支。[/yellow]")
+                    final_content = branches[0] if branches else "【系统提示：内容生成了但评估彻底失效】"
+                    break
+                continue
+                
+            evaluated_branches.sort(key=lambda x: x[1], reverse=True)
+            best_branch = evaluated_branches[0]
+            passed, score, feedback, directive, content = best_branch
+            
+            if passed:
+                console.print(f"      [green]✓ 选出最佳分支通过审核！ (总分: {score})[/green]")
+                final_content = content
+                break
+            else:
+                console.print(f"      [red]✗ 本轮所有分支均被总监打回，最优异的也仅有: {score}分[/red]")
+                # 聚合 directive
+                aggregated_directives = [f"【分支 {idx+1} ({b[1]}分) 问题】: {b[3]}" for idx, b in enumerate(evaluated_branches)]
+                current_feedback_directive = "\n".join(aggregated_directives)
+                
+                retries += 1
+                if retries > max_retries:
+                    console.print("      [yellow]⚠️ 达到最大重试次数，被迫采纳当前最优（虽不达标）的分支。[/yellow]")
+                    final_content = content
+                    break
+
+        # ==========================================
+        # 第二阶段：滑动窗口状态机（字数强制膨胀引擎）
+        # ==========================================
+        accumulated_content = final_content
+        current_words = count_words(accumulated_content)
+        
+        continuation_retries = 0
+        max_continuations = 8 # 允许最多膨胀 8 次
+        
+        while current_words < target_words and continuation_retries < max_continuations:
+            console.print(f"      [blue]📊 测算字数: {current_words} / {target_words}。未达标，启动状态机片段续写 (第 {continuation_retries+1} 次膨胀)...[/blue]")
+            
+            # 取最后 600 个字符作为滑动窗口上下文
+            sliding_window = accumulated_content[-600:]
+            remaining_words = target_words - current_words
+            
+            # 判定是否为最后一次绝杀收尾
+            is_final_chunk = (remaining_words < 500) or (continuation_retries == max_continuations - 1)
+            
+            if is_final_chunk:
+                action_instruction = f"字数即将达标。请紧接最后一句往下写，给当前这个大片段平稳收尾，留下一个悬念钩子即可。"
+            else:
+                action_instruction = f"距离本段落设定目标还有 {remaining_words} 字的缺口。请紧接最后一句往下写，**绝对不要收尾！** 可以在这里加入新的拉扯反转、增加环境动作细节、或爆出新的矛盾以扩充篇幅。"
+            
+            continue_prompt = f"""
+【前文结尾回顾（用于无缝拼接）】：
+...{sliding_window}
+
+【系统强制指令】：
+以上是你刚才写的一半剧情，剧情还没完。
+{action_instruction}
+（注意：必须直接输出接续的正文文本，绝对不要包含任何开场白、说明文字或重复前文最后一句，确保能与上面的结尾完美自然拼接在同一段。此外，绝对禁止输出任何【黄金三秒】等提示词标签！）
+"""
+            # 使用单线程单次请求快速膨胀，不再经过耗时的评分
+            continuation_chunk = self.llm.generate(
+                prompt=continue_prompt,
+                system_prompt=system_prompt,
+                max_tokens=remaining_words * 2 if remaining_words < 2500 else 4000
+            )
+            
+            if continuation_chunk:
+                # 去除可能存在的重复片段或前置空白
+                clean_chunk = continuation_chunk.strip()
+                accumulated_content += "\n\n" + clean_chunk
+                current_words = count_words(accumulated_content)
+                
+            continuation_retries += 1
+            
+        if current_words >= target_words:
+            console.print(f"      [bold green]🎉 字数强制膨胀成功！最终字数: {current_words} 完美达标[/bold green]")
+        else:
+            console.print(f"      [yellow]⚠️ 触发安全阀，强行结束膨胀。最终字数: {current_words}[/yellow]")
         
         return GeneratedSection(
             subtask_id=subtask.id,
             chapter_id=subtask.chapter_id,
-            content=content,
-            word_count=word_count
+            content=accumulated_content,
+            word_count=current_words
         )
     
     def summarize_section(self, content: str, max_words: int = 300) -> str:

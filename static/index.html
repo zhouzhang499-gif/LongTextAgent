@@ -1,0 +1,344 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="dark">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>LongTextAgent 创作台</title>
+    
+    <!-- Tailwind CSS & DaisyUI -->
+    <link href="https://cdn.jsdelivr.net/npm/daisyui@4.7.2/dist/full.min.css" rel="stylesheet" type="text/css" />
+    <script src="https://cdn.tailwindcss.com"></script>
+    
+    <!-- Vue 3 -->
+    <script src="https://unpkg.com/vue@3/dist/vue.global.js"></script>
+    
+    <!-- Marked.js for Markdown rendering -->
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
+        
+        body {
+            font-family: 'Inter', system-ui, -apple-system, sans-serif;
+            background: linear-gradient(135deg, #0f172a 0%, #1e1b4b 100%);
+            min-height: 100vh;
+            color: #e2e8f0;
+        }
+
+        .glass-panel {
+            background: rgba(30, 41, 59, 0.7);
+            backdrop-filter: blur(16px);
+            -webkit-backdrop-filter: blur(16px);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
+        }
+
+        .gradient-text {
+            background: linear-gradient(to right, #3b82f6, #8b5cf6, #ec4899);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }
+
+        .markdown-body {
+            line-height: 1.8;
+            font-size: 1.05rem;
+        }
+        .markdown-body h1 { font-size: 1.8rem; font-weight: bold; margin-top: 1.5rem; margin-bottom: 1rem; color: #f8fafc; }
+        .markdown-body h2 { font-size: 1.5rem; font-weight: bold; margin-top: 1.5rem; margin-bottom: 1rem; color: #f1f5f9; border-bottom: 1px solid #334155; padding-bottom: 0.5rem; }
+        .markdown-body h3 { font-size: 1.25rem; font-weight: bold; margin-top: 1.5rem; margin-bottom: 0.5rem; color: #e2e8f0; }
+        .markdown-body p { margin-bottom: 1rem; color: #cbd5e1; }
+        .markdown-body ul, .markdown-body ol { margin-left: 1.5rem; margin-bottom: 1rem; color: #cbd5e1; list-style-type: disc; }
+        .markdown-body blockquote { border-left: 4px solid #8b5cf6; padding-left: 1rem; font-style: italic; color: #94a3b8; margin-bottom: 1rem; background: rgba(139, 92, 246, 0.1); padding: 0.5rem 1rem; border-radius: 0 0.5rem 0.5rem 0;}
+    </style>
+</head>
+<body class="p-4 md:p-8">
+
+<div id="app" class="max-w-7xl mx-auto">
+    <!-- Header -->
+    <header class="text-center mb-10">
+        <h1 class="text-4xl md:text-6xl font-extrabold mb-4 tracking-tight">
+            <span class="gradient-text">LongText Agent</span> Studio
+        </h1>
+        <p class="text-slate-400 text-lg">基于双模型护航 (Kimi + DeepSeek) 的高质量长文本/短剧生成平台</p>
+    </header>
+
+    <div class="grid grid-cols-1 lg:grid-cols-12 gap-8">
+        
+        <!-- Left Panel: Configuration -->
+        <div class="lg:col-span-5">
+            <div class="glass-panel rounded-2xl p-6 lg:p-8 sticky top-8">
+                <h2 class="text-2xl font-bold mb-6 text-white flex items-center gap-2">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6 text-blue-400" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" /></svg>
+                    创作控制台
+                </h2>
+
+                <div class="form-control mb-4">
+                    <label class="label"><span class="label-text text-slate-300">作品标题</span></label>
+                    <input type="text" v-model="form.title" placeholder="例如：霸总复仇记" class="input input-bordered w-full bg-slate-800/50 border-slate-600 focus:border-blue-500 text-white" />
+                </div>
+
+                <div class="grid grid-cols-2 gap-4 mb-4">
+                    <div class="form-control">
+                        <label class="label"><span class="label-text text-slate-300">创作模式</span></label>
+                        <select v-model="form.mode" class="select select-bordered w-full bg-slate-800/50 border-slate-600 focus:border-blue-500 text-white">
+                            <option value="drama">🎬 短剧/漫剧爽文 (推荐)</option>
+                            <option value="novel">📚 传统小说</option>
+                            <option value="report">📊 研究报告</option>
+                            <option value="article">📝 爆款文章</option>
+                        </select>
+                    </div>
+                    
+                    <div class="form-control">
+                        <label class="label"><span class="label-text text-slate-300">目标字数</span></label>
+                        <input type="number" v-model="form.target_words" min="500" max="20000" step="500" class="input input-bordered w-full bg-slate-800/50 border-slate-600 focus:border-blue-500 text-white" />
+                    </div>
+                </div>
+
+                <div class="form-control mb-6">
+                    <label class="label">
+                        <span class="label-text text-slate-300">核心大纲与要求</span>
+                        <span class="label-text-alt text-slate-400">越详细效果越好</span>
+                    </label>
+                    <textarea v-model="form.outline" class="textarea textarea-bordered h-48 bg-slate-800/50 border-slate-600 focus:border-blue-500 text-white leading-relaxed" placeholder="请输入故事大纲、角色设定、爽点设计。如果选择了短剧模式，请务必强调【黄金三秒】和【打脸反击】的情节..."></textarea>
+                </div>
+
+                <button 
+                    @click="startGeneration" 
+                    :disabled="isGenerating"
+                    class="btn btn-primary w-full border-0 bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-500 hover:to-purple-500 text-white font-bold text-lg shadow-lg shadow-blue-900/50 transition-all duration-300 hover:scale-105"
+                >
+                    <span v-if="!isGenerating">
+                        <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6 inline-block mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z" /></svg>
+                        开始 AI 创作
+                    </span>
+                    <span v-else class="flex items-center justify-center">
+                        <span class="loading loading-spinner loading-md mr-2"></span>
+                        {{ generationStatusText }}...
+                    </span>
+                </button>
+            </div>
+        </div>
+
+        <!-- Right Panel: Result Preview -->
+        <div class="lg:col-span-7">
+            <div class="glass-panel rounded-2xl h-full min-h-[600px] flex flex-col overflow-hidden relative">
+                
+                <!-- Status Overlay (When generating) -->
+                <div v-if="isGenerating" class="absolute inset-0 bg-slate-900/60 backdrop-blur-sm z-10 flex flex-col items-center justify-center p-8 text-center transition-all">
+                    <div class="w-24 h-24 mb-6 relative">
+                        <div class="absolute inset-0 rounded-full border-t-4 border-blue-500 animate-spin"></div>
+                        <div class="absolute inset-2 rounded-full border-r-4 border-purple-500 animate-spin" style="animation-direction: reverse; animation-duration: 1.5s;"></div>
+                        <div class="absolute inset-4 rounded-full border-b-4 border-pink-500 animate-spin" style="animation-duration: 2s;"></div>
+                        <svg xmlns="http://www.w3.org/2000/svg" class="h-8 w-8 text-white absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19.428 15.428a2 2 0 00-1.022-.547l-2.387-.477a6 6 0 00-3.86.517l-.318.158a6 6 0 01-3.86.517L6.05 15.21a2 2 0 00-1.806.547M8 4h8l-1 1v5.172a2 2 0 00.586 1.414l5 5c1.26 1.26.367 3.414-1.415 3.414H4.828c-1.782 0-2.674-2.154-1.414-3.414l5-5A2 2 0 009 10.172V5L8 4z" /></svg>
+                    </div>
+                    <h3 class="text-2xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-blue-400 to-purple-400 mb-2">{{ generationStatusText }}</h3>
+                    <p class="text-slate-300 max-w-md">
+                        长文本生成正在后台进行中。如果是短剧模式，裁判总监正在对每一幕进行严苛的打分与重写迭代，这可能需要几分钟时间，请耐心等待。
+                    </p>
+                    <div class="mt-8 w-full max-w-sm">
+                        <progress class="progress progress-primary w-full" :value="generateProgress" max="100"></progress>
+                    </div>
+                    <div class="mt-4 text-sm text-slate-400 font-mono flex items-center gap-2">
+                        <span class="relative flex h-3 w-3">
+                          <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-blue-400 opacity-75"></span>
+                          <span class="relative inline-flex rounded-full h-3 w-3 bg-blue-500"></span>
+                        </span>
+                        Kimi (执笔) & DeepSeek (裁判) 正在疯狂运转...
+                    </div>
+                </div>
+
+                <!-- Header -->
+                <div class="border-b border-slate-700/50 bg-slate-800/80 p-4 flex justify-between items-center z-0">
+                    <h2 class="text-lg font-bold text-white flex items-center gap-2">
+                        <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 text-purple-400" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M4 4a2 2 0 012-2h4.586A2 2 0 0112 2.586L15.414 6A2 2 0 0116 7.414V16a2 2 0 01-2 2H6a2 2 0 01-2-2V4zm2 6a1 1 0 011-1h6a1 1 0 110 2H7a1 1 0 01-1-1zm1 3a1 1 0 100 2h6a1 1 0 100-2H7z" clip-rule="evenodd" /></svg>
+                        生成结果预览
+                    </h2>
+                    <div class="badge badge-primary badge-outline" v-if="resultContent">已完成 {{ wordCount }} 字</div>
+                </div>
+
+                <!-- Content Area -->
+                <div class="flex-1 overflow-y-auto p-6 md:p-8 bg-slate-900/50">
+                    <div v-if="!resultContent && !isGenerating" class="h-full flex flex-col items-center justify-center text-slate-500">
+                        <svg xmlns="http://www.w3.org/2000/svg" class="h-20 w-20 mb-4 opacity-50" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 002-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" /></svg>
+                        <p class="text-lg">配置大纲并点击左侧按钮开始生成</p>
+                    </div>
+
+                    <!-- Rendered Markdown -->
+                    <div v-else-if="resultContent" id="markdown-container" class="markdown-body" v-html="renderedContent"></div>
+                </div>
+                
+                <!-- Action Bar -->
+                <div v-if="resultContent" class="border-t border-slate-700/50 bg-slate-800/80 p-4 flex justify-end gap-3 z-0">
+                    <button @click="copyContent" class="btn btn-sm btn-outline text-slate-300 hover:text-white">
+                        <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 5H6a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2v-1M8 5a2 2 0 002 2h2a2 2 0 002-2M8 5a2 2 0 012-2h2a2 2 0 012 2m0 0h2a2 2 0 012 2v3m2 4H10m0 0l3-3m-3 3l3 3" /></svg>
+                        复制全文
+                    </button>
+                    <button @click="downloadContent" class="btn btn-sm btn-primary">
+                        <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" /></svg>
+                        下载 MD 文件
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+    const { createApp, ref, computed, onMounted } = Vue;
+
+    createApp({
+        setup() {
+            const form = ref({
+                title: '霸道总裁的契约赘婿',
+                mode: 'drama',
+                target_words: 3000,
+                outline: `第一幕：家族晚宴上的惊变
+- 楚天（男主）作为林家赘婿，在岳父寿宴上被林家小舅子当众泼满身红酒，并甩出伪造的出轨照片逼他净身出户。
+- 妻子林婉儿冷眼旁观，不发一语，默许了家族的欺辱。
+- 楚天冷笑，毫不犹豫签下离婚协议。下一秒，首富的直升机降落在宴会厅外，全球首富管家推门而入，单膝跪地：“少爷，三年考核期已满，千亿帝国等您继承。”
+
+第二幕：打脸绿茶前妻
+- 林家公司资金链断裂，林婉儿去首富财团求职求投资。
+- 在面试会议室，林婉儿卑躬屈膝，抬头却发现坐在总裁椅上转过来的人，正是她刚扫地出门的“废物赘婿”楚天。
+- 楚天冷冷将她的计划书扔进垃圾桶...`
+            });
+
+            const isGenerating = ref(false);
+            const generationStatusText = ref('AI 构思中');
+            const generateProgress = ref(0);
+            const resultContent = ref('');
+            const wordCount = ref(0);
+            
+            let pollInterval = null;
+
+            const renderedContent = computed(() => {
+                if (!resultContent.value) return '';
+                return marked.parse(resultContent.value);
+            });
+
+            const startGeneration = async () => {
+                if (!form.value.outline || !form.value.title) {
+                    alert('请填写完整的标题和大纲！');
+                    return;
+                }
+
+                isGenerating.value = true;
+                resultContent.value = '';
+                generateProgress.value = 10;
+                generationStatusText.value = '提交生成规划';
+
+                try {
+                    const response = await fetch('/api/generate', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            title: form.value.title,
+                            outline: form.value.outline,
+                            target_words: parseInt(form.value.target_words),
+                            mode: form.value.mode,
+                            enable_check: true
+                        })
+                    });
+
+                    const data = await response.json();
+                    if (data.task_id) {
+                        generateProgress.value = 30;
+                        pollStatus(data.task_id);
+                    } else {
+                        throw new Error(data.detail || '请求失败');
+                    }
+                } catch (error) {
+                    alert('生成发起了请求，但遭遇错误: ' + error.message);
+                    isGenerating.value = false;
+                }
+            };
+
+            const pollStatus = (taskId) => {
+                let ticks = 0;
+                if (pollInterval) clearInterval(pollInterval);
+                
+                pollInterval = setInterval(async () => {
+                    ticks++;
+                    // Fake progress animation
+                    if (generateProgress.value < 85) {
+                        generateProgress.value += 1;
+                    }
+
+                    // Rotating fun texts
+                    const statusTexts = [
+                        "Kimi 正在奋笔疾书...",
+                        "DeepSeek 裁判正在严厉打分...",
+                        "发现剧情平淡，强制打回重写...",
+                        "修正剧情节奏，强化画面感...",
+                        "添加黄金三秒爆点...",
+                        "整合上下文，处理剧情转折..."
+                    ];
+                    if (ticks % 3 === 0) {
+                        generationStatusText.value = statusTexts[Math.floor(Math.random() * statusTexts.length)];
+                    }
+
+                    try {
+                        const response = await fetch(`/api/task/${taskId}`);
+                        const data = await response.json();
+
+                        if (data.status === 'completed') {
+                            clearInterval(pollInterval);
+                            finishGeneration(data.content, data.word_count);
+                        } else if (data.status === 'failed') {
+                            clearInterval(pollInterval);
+                            alert('生成失败: ' + data.error);
+                            isGenerating.value = false;
+                        }
+                    } catch (error) {
+                        console.error('Polling error:', error);
+                    }
+                }, 3000);
+            };
+
+            const finishGeneration = (content, count) => {
+                generateProgress.value = 100;
+                generationStatusText.value = '即将完成';
+                
+                setTimeout(() => {
+                    resultContent.value = content;
+                    wordCount.value = count;
+                    isGenerating.value = false;
+                }, 800);
+            };
+
+            const copyContent = () => {
+                navigator.clipboard.writeText(resultContent.value).then(() => {
+                    alert('内容已复制到剪贴板！');
+                });
+            };
+
+            const downloadContent = () => {
+                const blob = new Blob([resultContent.value], { type: 'text/markdown' });
+                const url = window.URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = `${form.value.title}.md`;
+                document.body.appendChild(a);
+                a.click();
+                document.body.removeChild(a);
+                window.URL.revokeObjectURL(url);
+            };
+
+            return {
+                form,
+                isGenerating,
+                generationStatusText,
+                generateProgress,
+                resultContent,
+                renderedContent,
+                wordCount,
+                startGeneration,
+                copyContent,
+                downloadContent
+            };
+        }
+    }).mount('#app');
+</script>
+</body>
+</html>

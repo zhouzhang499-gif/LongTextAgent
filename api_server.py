@@ -9,6 +9,7 @@ from datetime import datetime
 from typing import Optional, List
 from fastapi import FastAPI, HTTPException, BackgroundTasks
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
 import uvicorn
 
@@ -130,18 +131,14 @@ def run_generation_task(task_id: str, request: GenerateRequest):
 
 @app.get("/")
 async def root():
-    """API 根路径"""
+    """返回 Web UI 界面"""
+    index_path = os.path.join(project_root, "static", "index.html")
+    if os.path.exists(index_path):
+        return FileResponse(index_path)
     return {
         "service": "LongTextAgent API",
-        "version": "1.0.0",
-        "status": "running",
-        "endpoints": {
-            "generate": "/api/generate",
-            "quick": "/api/quick",
-            "status": "/api/task/{task_id}",
-            "modes": "/api/modes",
-            "providers": "/api/providers"
-        }
+        "message": "static/index.html not found! Please create the UI file.",
+        "status": "running"
     }
 
 
@@ -150,6 +147,7 @@ async def get_modes():
     """获取支持的生成模式"""
     return {
         "modes": {
+            "drama": "短剧/漫剧爽文 - 极快节奏、高潮迭起",
             "novel": "小说/故事 - 适用于各类虚构作品",
             "report": "研究报告 - 适用于市场调研、行业分析",
             "article": "文章/博客 - 适用于公众号、博客帖子",
@@ -224,6 +222,7 @@ async def quick_generate(request: QuickGenerateRequest):
     
     # 选择模式
     mode_map = {
+        "drama": "drama",
         "article": "article",
         "novel": "novel", 
         "story": "novel",
@@ -311,11 +310,13 @@ if __name__ == "__main__":
     print("=" * 50)
     print("LongTextAgent API Server")
     print("=" * 50)
+    print("=" * 50)
     print("Endpoints:")
-    print("  - http://localhost:8000/api/quick    (快速生成)")
-    print("  - http://localhost:8000/api/generate (异步生成)")
-    print("  - http://localhost:8000/api/xiaoyi   (小艺专用)")
-    print("  - http://localhost:8000/docs         (API文档)")
+    print("  - http://localhost:8001/         (创作台 Web UI)")
+    print("  - http://localhost:8001/api/quick    (快速生成)")
+    print("  - http://localhost:8001/api/generate (异步生成)")
+    print("  - http://localhost:8001/api/xiaoyi   (小艺专用)")
+    print("  - http://localhost:8001/docs         (API文档)")
     print("=" * 50)
     
-    uvicorn.run(app, host="0.0.0.0", port=8000)
+    uvicorn.run(app, host="0.0.0.0", port=8001)

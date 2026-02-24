@@ -67,15 +67,27 @@ class ContentPipeline:
         self.mode = mode
         self.enable_consistency_check = enable_consistency_check
         
-        # 初始化 LLM 客户端
-        llm_config = self.config.get('llm', {})
-        self.llm = LLMClient(
-            provider=llm_config.get('provider', 'deepseek'),
-            api_key=llm_config.get('api_key'),
-            base_url=llm_config.get('base_url'),
-            model=llm_config.get('model', 'deepseek-chat'),
-            temperature=llm_config.get('temperature', 0.7),
-            max_tokens=llm_config.get('max_tokens', 4096)
+        # 初始化 LLM 客户端 (双模型：生成用和大模型裁判用)
+        # 如果没有配置 generator_llm，则降级回落到原来的 llm
+        gen_llm_config = self.config.get('generator_llm', self.config.get('llm', {}))
+        self.generator_llm = LLMClient(
+            provider=gen_llm_config.get('provider', 'deepseek'),
+            api_key=gen_llm_config.get('api_key'),
+            base_url=gen_llm_config.get('base_url'),
+            model=gen_llm_config.get('model', 'deepseek-chat'),
+            temperature=gen_llm_config.get('temperature', 0.7),
+            max_tokens=gen_llm_config.get('max_tokens', 4096)
+        )
+        
+        # 评估模型
+        eval_llm_config = self.config.get('evaluator_llm', self.config.get('llm', {}))
+        self.evaluator_llm = LLMClient(
+            provider=eval_llm_config.get('provider', 'deepseek'),
+            api_key=eval_llm_config.get('api_key'),
+            base_url=eval_llm_config.get('base_url'),
+            model=eval_llm_config.get('model', 'deepseek-chat'),
+            temperature=eval_llm_config.get('temperature', 0.7),
+            max_tokens=eval_llm_config.get('max_tokens', 4096)
         )
         
         # 加载模式配置
@@ -86,12 +98,13 @@ class ContentPipeline:
         ctx_config = self.config.get('context', {})
         
         self.planner = Planner(
-            llm=self.llm,
+            llm=self.generator_llm,
             words_per_section=gen_config.get('words_per_section', 2500)
         )
         
         self.writer = Writer(
-            llm=self.llm,
+            llm=self.generator_llm,
+            evaluator_llm=self.evaluator_llm,
             mode=mode,
             mode_config=self.mode_config,
             max_context_tokens=ctx_config.get('max_context_tokens', 8000)
@@ -104,7 +117,7 @@ class ContentPipeline:
         
         # 增强版摘要存储
         self.summary_store = SummaryStore(
-            llm=self.llm,
+            llm=self.generator_llm,
             max_section_summaries=10,
             max_chapter_summaries=20
         )
@@ -114,7 +127,7 @@ class ContentPipeline:
         
         # 一致性检查器
         self.checker = ConsistencyChecker(
-            llm=self.llm,
+            llm=self.evaluator_llm,
             settings_store=self.settings_store
         )
         
@@ -135,11 +148,12 @@ class ContentPipeline:
             config = yaml.safe_load(f)
         
         # 处理环境变量
-        if 'llm' in config and 'api_key' in config['llm']:
-            api_key = config['llm']['api_key']
-            if isinstance(api_key, str) and api_key.startswith('${') and api_key.endswith('}'):
-                env_var = api_key[2:-1]
-                config['llm']['api_key'] = os.getenv(env_var)
+        for block in ['llm', 'generator_llm', 'evaluator_llm']:
+            if block in config and 'api_key' in config[block]:
+                api_key = config[block]['api_key']
+                if isinstance(api_key, str) and api_key.startswith('${') and api_key.endswith('}'):
+                    env_var = api_key[2:-1]
+                    config[block]['api_key'] = os.getenv(env_var)
         
         return config
     
@@ -244,10 +258,23 @@ class ContentPipeline:
                         total=None
                     )
                 
+                # 构建动态最新设定 (带有人物的当前状态，防止前后文崩坏)
+                dynamic_settings = dict(plan.settings) if plan.settings else {}
+                if self.settings_store.get_all_characters():
+                    chars_text = []
+                    for char in self.settings_store.get_all_characters():
+                        c_info = char.name
+                        if char.description:
+                            c_info += f": {char.description}"
+                        if char.current_state:
+                            c_info += f" 【当前状态: {char.current_state}】"
+                        chars_text.append(c_info)
+                    dynamic_settings['characters'] = chars_text
+
                 # 生成章节
                 content, summary = self.writer.generate_chapter(
                     chapter=chapter,
-                    settings=plan.settings,
+                    settings=dynamic_settings,
                     previous_summaries=self.context_manager.get_recent_summaries()
                 )
                 
@@ -268,8 +295,11 @@ class ContentPipeline:
                     word_count=word_count
                 )
                 
-                # 一致性检查（如果启用）
+                # 一致性检查与状态更新（如果启用）
                 if self.enable_consistency_check:
+                    console.print("    [dim]🔄 正在提取当前章节人物最新状态...[/dim]")
+                    self.checker.update_states_from_content(content)
+                    
                     check_result = self.checker.check_content(
                         content=content,
                         chapter_id=chapter.id,
@@ -539,7 +569,7 @@ class ContentPipeline:
         
         # 调用 LLM 进行检查
         try:
-            response = self.llm.generate(check_prompt)
+            response = self.evaluator_llm.generate(check_prompt)
             issues = self._parse_check_response(response)
         except Exception as e:
             console.print(f"[red]检查失败: {e}[/red]")

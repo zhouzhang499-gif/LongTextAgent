@@ -129,57 +129,145 @@ class Planner:
             settings=settings
         )
     
-    def _parse_natural_outline(self, outline_text: str, target_words: int) -> NovelPlan:
-        """使用 LLM 解析自然语言大纲"""
-        prompt = f"""请分析以下大纲，提取结构化信息。
+    def _parse_natural_outline(self, outline_text: str, target_words: int) -> ContentPlan:
+        """使用 LLM 分块并行解析自然语言大纲 (方案一)"""
+        import concurrent.futures
+        
+        # 1. 物理切片大纲 (Chunking)
+        # 按常见的分卷/分章标识符进行粗略分块，避免大模型单次吞吐量过大导致截断变形
+        chunks = self._chunk_outline(outline_text)
+        
+        # 计算每块的预估字数配额
+        words_per_chunk = target_words // len(chunks) if chunks else target_words
+        
+        parsed_chapters = []
+        global_title = "未命名作品"
+        
+        # 2. 定义单块解析函数
+        def _parse_chunk(chunk_idx: int, chunk_text: str) -> list:
+            prompt = f"""请分析以下大纲片段，提取结构化章节信息。
 
-【大纲内容】
-{outline_text}
+【大纲片段内容】
+{chunk_text}
 
-【目标总字数】
-{target_words} 字
+【目标总字数（本片段配额）】
+{words_per_chunk} 字
 
-请以 YAML 格式输出，包含以下结构：
+请严格以 YAML 格式输出本片段包含的章节：
 ```yaml
-title: 作品标题
 chapters:
-  - title: 第一章标题
-    brief: 本章主要内容简介（50-100字）
+  - title: 章节标题 (如: 第一章 相遇)
+    brief: 本章主要内容简介（50-100字，尽量详细提取片段中提及的剧情）
     words: 预计字数
-  - title: 第二章标题
-    brief: 本章主要内容简介
-    words: 预计字数
-  # ... 更多章节
 ```
 
-只输出 YAML 代码块，不要其他内容。"""
+注意：
+1. 只输出 YAML 代码块，不要有任何其他解释文字。
+2. 即使片段只有一句话，也帮我构造出一个合理的章节结构。
+3. 保持原大纲的章节顺序。"""
 
-        response = self.llm.generate(prompt)
-        
-        # 提取 YAML 代码块
-        yaml_match = re.search(r'```yaml\s*(.*?)\s*```', response, re.DOTALL)
-        if yaml_match:
-            yaml_text = yaml_match.group(1)
-        else:
-            yaml_text = response
-        
+            response = self.llm.generate(prompt, max_tokens=2048)
+            
+            yaml_match = re.search(r'```yaml\s*(.*?)\s*```', response, re.DOTALL)
+            yaml_text = yaml_match.group(1) if yaml_match else response
+            
+            try:
+                data = yaml.safe_load(yaml_text)
+                return data.get('chapters', []) if isinstance(data, dict) else []
+            except Exception as e:
+                # 容错：如果单块解析彻底失败，生成一个保底单章
+                print(f"解析大纲块 {chunk_idx} 失败: {e}")
+                return [{
+                    'title': f"解析修复章节 (块 {chunk_idx})",
+                    'brief': chunk_text[:200],
+                    'words': words_per_chunk
+                }]
+
+        # 3. 并行解析所有块 (Parallel Processing)
+        # 使用线程池并发向 LLM 发送局部大纲，极大提升速度并防止超长文本导致 Attention 机制崩溃
+        with concurrent.futures.ThreadPoolExecutor(max_workers=min(5, len(chunks))) as executor:
+            future_to_chunk = {
+                executor.submit(_parse_chunk, i, chunk): i 
+                for i, chunk in enumerate(chunks)
+            }
+            
+            # 按顺序收集结果
+            chunk_results = [[] for _ in range(len(chunks))]
+            for future in concurrent.futures.as_completed(future_to_chunk):
+                chunk_idx = future_to_chunk[future]
+                try:
+                    chunk_results[chunk_idx] = future.result()
+                except Exception as e:
+                    print(f"大纲块 {chunk_idx} 并发抛出异常: {e}")
+                    
+        # 4. 合并章节结果
+        all_chapters_data = []
+        for res in chunk_results:
+            if isinstance(res, list):
+                all_chapters_data.extend(res)
+                
+        # 5. 组装成最终的 Plan
+        # 尝试从全文提取书名（轻量级）
+        title_prompt = f"请为以下大纲提取或拟定一个作品标题：\n{outline_text[:1000]}\n只输出标题字符串，不要任何引号或多余文字。"
         try:
-            data = yaml.safe_load(yaml_text)
-            return self._parse_yaml_outline(data, target_words)
-        except Exception as e:
-            # 解析失败，创建默认单章节
-            return ContentPlan(
-                title="未命名作品",
-                total_target_words=target_words,
-                chapters=[
-                    Chapter(
-                        id=1,
-                        title="第一章",
-                        brief=outline_text[:500],
-                        target_words=target_words
-                    )
-                ]
-            )
+            global_title = self.llm.generate(title_prompt, max_tokens=50).strip(' "【】\n')
+        except:
+            pass
+            
+        final_yaml_struct = {
+            'title': global_title,
+            'type': 'novel',
+            'chapters': all_chapters_data
+        }
+        
+        return self._parse_yaml_outline(final_yaml_struct, target_words)
+        
+    def _chunk_outline(self, outline_text: str) -> List[str]:
+        """将长篇自然语言大纲进行物理分块，避免大模型截断"""
+        import re
+        
+        # 如果文本本来就不长 (< 1500 字)，没必要分块，直接作为一个 Chunk
+        if len(outline_text) < 1500:
+            return [outline_text]
+            
+        chunks = []
+        # 尝试按常见的章节标志进行分割 (比如：第X章、卷X、Chapter X、大纲片段等)
+        # 这里使用一种安全的分割策略：寻找明显的分段标志，如果两个标志相隔超过 800 字，就在该标志处切割
+        
+        # 预编译常见的标题分割正则
+        split_pattern = re.compile(r'(?=\n(?:第[一二三四五六七八九十百千万\w]+[章卷回节幕]|Chapter\s*\d+|【第[一二三四五六七八九十百千万\w]+[章卷回节幕]】|#+\s+第))')
+        
+        raw_chunks = split_pattern.split(outline_text)
+        
+        current_chunk = ""
+        # 聚合成理想大小的块 (约 1000 - 2000 字符一块)
+        for part in raw_chunks:
+            if not part.strip(): continue
+            if len(current_chunk) + len(part) > 2000 and current_chunk:
+                chunks.append(current_chunk.strip())
+                current_chunk = part
+            else:
+                current_chunk += ("\n" + part if current_chunk else part)
+                
+        if current_chunk.strip():
+            chunks.append(current_chunk.strip())
+            
+        # 如果正则没有起效（比如完全没用“第X章”的格式，是一大坨纯文本），做一次蛮力按字数切割（以防万一）
+        if len(chunks) == 1 and len(chunks[0]) > 3000:
+            forced_chunks = []
+            text = chunks[0]
+            step = 2500
+            for i in range(0, len(text), step):
+                # 尽量在换行符处切断
+                end = min(i + step, len(text))
+                if end < len(text):
+                    next_newline = text.find('\n', end)
+                    if next_newline != -1 and next_newline - end < 500:
+                        end = next_newline + 1
+                forced_chunks.append(text[i:end].strip())
+            return forced_chunks
+            
+        return chunks
     
     def decompose_chapter(self, chapter: Chapter) -> List[SubTask]:
         """

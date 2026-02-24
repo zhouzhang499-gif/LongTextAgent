@@ -1,33 +1,19 @@
 # LongTextAgent 配置文件
 
 # LLM 配置
-llm:
-  # 提供商: deepseek / openai / claude / qwen / glm / moonshot / ollama / custom
+generator_llm:
+  # 提供商: moonshot
+  provider: moonshot
+  api_key: "sk-mkZS1LNZGtmeJR45vXxFmNQo1oz3yEfJ8cy1h5dIcHfyqbcn"
+  model: moonshot-v1-8k
+  temperature: 0.7
+  max_tokens: 4096
+
+evaluator_llm:
+  # 提供商: deepseek
   provider: deepseek
-  
-  # API Key - 从环境变量读取（不同提供商使用不同的环境变量名）
-  # DeepSeek: DEEPSEEK_API_KEY
-  # OpenAI: OPENAI_API_KEY
-  # Claude: ANTHROPIC_API_KEY
-  # 通义千问: DASHSCOPE_API_KEY
-  # 智谱GLM: ZHIPU_API_KEY
-  # Moonshot: MOONSHOT_API_KEY
-  api_key: ${DEEPSEEK_API_KEY}
-  
-  # API 地址 (可选，默认使用提供商配置)
-  # base_url: https://api.deepseek.com
-  
-  # 模型名称 (可选，默认使用提供商配置)
-  # 常用模型:
-  # - DeepSeek: deepseek-chat, deepseek-reasoner
-  # - OpenAI: gpt-4o, gpt-4o-mini, gpt-3.5-turbo
-  # - Claude: claude-3-5-sonnet-20241022, claude-3-haiku-20240307
-  # - 通义千问: qwen-plus, qwen-turbo, qwen-max
-  # - 智谱GLM: glm-4-flash, glm-4, glm-3-turbo
-  # - Moonshot: moonshot-v1-8k, moonshot-v1-32k, moonshot-v1-128k
-  # - Ollama: llama3.2, qwen2.5, deepseek-r1
+  api_key: "sk-f1a4a5d4cec04819a0981ffbe613b029"
   model: deepseek-chat
-  
   temperature: 0.7
   max_tokens: 4096
 
@@ -56,6 +42,13 @@ consistency:
   check_character_names: true
   check_timeline: true
   check_settings: true
+
+# 质量评估 (LLM-as-a-Judge)
+evaluation:
+  # 目标及格分数
+  target_pass_score: 81
+  # 质量未达标时的最大重试次数
+  max_retries: 3
 
 # 输出配置
 output:

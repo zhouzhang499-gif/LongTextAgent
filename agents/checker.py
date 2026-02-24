@@ -133,6 +133,52 @@ class ConsistencyChecker:
             summary=summary,
             checked_items=checked_items
         )
+        
+    def update_states_from_content(self, content: str):
+        """分析章节内容，提取并更新人物的最新状态（受伤、财力、能力觉醒、位置等）"""
+        known_names = self.settings_store.get_character_names()
+        if not known_names:
+            return
+            
+        prompt = f"""作为设定集记录员，请阅读以下最新章节，提取出场人物的【最新状态变化】。
+关注以下方面：
+1. 身体状态（受伤、中毒、痊愈等）
+2. 财富/地位变化（破产、升职、获得巨款）
+3. 能力/修为变化（突破、获得神器、能力被废）
+4. 关键位置或心理状态变动
+
+【已知人物列表】
+{", ".join(known_names)}
+
+【最新章节内容】
+{content[:4000]}
+
+请严格按以下JSON格式输出，只包含有状态变化的人物：
+```json
+[
+  {{"name": "人物名", "state": "简短的一句话描述其最新状态，例如：右臂骨折，目前在医院昏迷；刚获得100万投资。"}}
+]
+```
+如果没有状态变化，输出空数组 []。"""
+
+        try:
+            result = self.llm.generate(prompt, max_tokens=1024)
+            json_match = re.search(r'```json\s*(.*?)\s*```', result, re.DOTALL)
+            if json_match:
+                data = json.loads(json_match.group(1))
+            else:
+                data = json.loads(result)
+                
+            if isinstance(data, list):
+                for item in data:
+                    name = item.get("name")
+                    state = item.get("state")
+                    if name and state:
+                        # 确保不超字数
+                        self.settings_store.update_character_state(name, state[:100])
+        except Exception as e:
+            print(f"提取人物状态失败: {e}")
+
     
     def _check_character_names(self, content: str) -> List[ConsistencyIssue]:
         """检查人物名称一致性"""
