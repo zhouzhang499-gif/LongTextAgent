@@ -6,6 +6,7 @@ Planner Agent - 大纲规划与任务分解
 
 from dataclasses import dataclass, field
 from typing import List, Optional
+import os
 import re
 import yaml
 
@@ -68,6 +69,16 @@ class Planner:
         self.words_per_section = words_per_section
         self.min_words = int(words_per_section * min_tolerance)
         self.max_words = int(words_per_section * max_tolerance)
+        
+        # 加载外部提示词模板
+        self.prompts = {}
+        try:
+            prompts_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), "config", "prompts.yaml")
+            if os.path.exists(prompts_path):
+                with open(prompts_path, 'r', encoding='utf-8') as f:
+                    self.prompts = yaml.safe_load(f).get("planner", {})
+        except Exception as e:
+            print(f"[-] 警告：加载 planner 提示词模板失败 ({e})，将使用默认内置模板。")
     
     def parse_outline(self, outline_text: str, target_words: int = 10000) -> NovelPlan:
         """
@@ -143,9 +154,8 @@ class Planner:
         parsed_chapters = []
         global_title = "未命名作品"
         
-        # 2. 定义单块解析函数
         def _parse_chunk(chunk_idx: int, chunk_text: str) -> list:
-            prompt = f"""请分析以下大纲片段，提取结构化章节信息。
+            default_prompt = f"""请分析以下大纲片段，提取结构化章节信息。
 
 【大纲片段内容】
 {chunk_text}
@@ -165,6 +175,14 @@ chapters:
 1. 只输出 YAML 代码块，不要有任何其他解释文字。
 2. 即使片段只有一句话，也帮我构造出一个合理的章节结构。
 3. 保持原大纲的章节顺序。"""
+
+            template = self.prompts.get("parse_chunk", default_prompt)
+            # 简单的模板替换（如果模板包含对应占位符）
+            try:
+                # 若外部模板未定义参数，使用 format 可能抛出 KeyError，这里做回退
+                prompt = template.format(chunk_text=chunk_text, words_per_chunk=words_per_chunk)
+            except Exception:
+                prompt = default_prompt
 
             response = self.llm.generate(prompt, max_tokens=2048)
             
@@ -308,7 +326,7 @@ chapters:
     ) -> List[SubTask]:
         """使用 LLM 将章节分解为多个子任务"""
         
-        prompt = f"""请将以下章节内容分解为 {num_subtasks} 个写作子任务。
+        default_prompt = f"""请将以下章节内容分解为 {num_subtasks} 个写作子任务。
 
 【章节信息】
 - 标题：{chapter.title}
@@ -328,6 +346,18 @@ subtasks:
 ```
 
 只输出 YAML 代码块。"""
+
+        template = self.prompts.get("decompose_chapter", default_prompt)
+        try:
+            prompt = template.format(
+                num_subtasks=num_subtasks,
+                chapter_title=chapter.title,
+                chapter_brief=chapter.brief,
+                target_words=chapter.target_words,
+                words_per_subtask=words_per_subtask
+            )
+        except Exception:
+            prompt = default_prompt
 
         response = self.llm.generate(prompt)
         

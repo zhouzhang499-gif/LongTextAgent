@@ -6,6 +6,8 @@
 from typing import List, Dict, Optional, Tuple
 from dataclasses import dataclass
 from enum import Enum
+import os
+import yaml
 import json
 import re
 
@@ -73,7 +75,17 @@ class ConsistencyChecker:
         settings_store: Optional[SettingsStore] = None
     ):
         self.llm = llm
-        self.settings_store = settings_store or SettingsStore()
+        self.settings_store = settings_store
+        
+        # 加载外部提示词模板
+        self.prompts = {}
+        try:
+            prompts_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), "config", "prompts.yaml")
+            if os.path.exists(prompts_path):
+                with open(prompts_path, 'r', encoding='utf-8') as f:
+                    self.prompts = yaml.safe_load(f).get("checker", {})
+        except Exception as e:
+            print(f"[-] 警告：加载 checker 提示词模板失败 ({e})，将使用默认内置模板。") or SettingsStore()
     
     def check_content(
         self,
@@ -486,53 +498,69 @@ class ConsistencyChecker:
 
     def _build_fulltext_check_prompt(self, content: str, title: str) -> str:
         """构建全文检查提示词"""
-        max_chars = 25000
-        if len(content) > max_chars:
-            part_len = max_chars // 3
-            content = (
-                content[:part_len] + 
-                "\n\n[...中间部分省略...]\n\n" + 
-                content[len(content)//2 - part_len//2:len(content)//2 + part_len//2] +
-                "\n\n[...中间部分省略...]\n\n" +
-                content[-part_len:]
-            )
         
-        return f'''请对以下小说/文章进行全文连贯性检查。
+        # 收集上下文信息
+        context = []
+        if self.settings_store:
+            world_settings = self.settings_store.get_world_settings()
+            if world_settings:
+                context.append("【世界观设定】")
+                for k, v in world_settings.items():
+                    context.append(f"- {k}: {v}")
+                    
+            characters = self.settings_store.get_all_characters()
+            if characters:
+                context.append("\n【主要人物】")
+                for name, info in characters.items():
+                    context.append(f"- {name}: {info['description']}")
+                    if info['traits']:
+                        context.append(f"  性格: {', '.join(info['traits'])}")
+        
+        context_str = "\n".join(context) if context else "无可用设定信息"
+        
+        default_prompt = f"""你是一个专业的文学编辑和逻辑审核员。请对以下小说/文章内容进行深度的逻辑与一致性检查。
+你的任务是找出内容中存在的冲突、漏洞和不合理之处。
 
-作品标题：{title or "未命名"}
+【已知设定参考】
+{context_str}
 
-检查维度：
-1. 人物一致性 - 人物名字、性格、外貌是否前后一致
-2. 情节逻辑 - 事件发展是否合理，因果关系是否成立
-3. 时间线 - 时间顺序是否正确
-4. 场景设定 - 场景描写是否矛盾
-5. 伏笔回收 - 伏笔是否得到呼应
+【待检查内容】
+作品名：{title}
+{content}
 
-请严格按照以下 JSON 格式输出检查结果：
+请检查以下方面：
+1. 人物名称或称呼前后不一致（如把“张三”写成“李四”）
+2. 人物性格或能力与设定冲突（如普通人突然会魔法，除非有合理解释）
+3. 时间线逻辑错误（如时间倒流、事件顺序冲突）
+4. 设定冲突（与已知设定的物理定律、地理位置、力量体系冲突）
+5. 情节漏洞（未填的坑、缺乏逻辑的突发事件）
+6. 连续性（前后文衔接不自然，场景/动作跳跃）
 
-```json
+请以 JSON 格式输出检查结果，格式要求如下：
 {{
-  "issues": [
+  "passed": false, // 如果没有发现任何问题则为 true
+  "issues": [      // 如果通过，此数组可以为空
     {{
-      "type": "人物一致性|情节逻辑|时间线|场景设定|伏笔回收",
-      "severity": "高|中|低",
-      "location": "问题所在章节",
-      "description": "问题描述",
-      "suggestion": "修改建议",
-      "original": "问题原文（简短）",
-      "fixed": "修改后文本"
+      "type": "类型（例如：人物名称不一致、时间线矛盾、情节漏洞等）",
+      "severity": "严重程度（低/中/高/严重）",
+      "location": "问题出现的具体位置片段或段落",
+      "description": "详细描述问题是什么，为什么是不合理的",
+      "suggestion": "提供修改建议"
     }}
   ],
-  "summary": "总体评价"
+  "summary": "整体评价和审核总结（50-100字）"
 }}
-```
 
-如果没有发现问题，issues 数组为空。
-
-待检查内容：
-
-{content}
-'''
+约束条件：
+1. 只输出有效的 JSON，不要包含任何 markdown 标记（如 ```json）或额外说明文本。
+2. 确保输出可以被 JSON 解析器直接解析。
+3. 如果没有发现问题，也要严格按照 JSON 格式返回 passed: true。
+"""
+        template = self.prompts.get("deep_check", default_prompt)
+        try:
+            return template.format(context_str=context_str, title=title, content=content)
+        except Exception:
+            return default_prompt
 
     def _parse_check_response(self, response: str) -> List[ConsistencyIssue]:
         """解析检查响应"""

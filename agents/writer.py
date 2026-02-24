@@ -100,15 +100,25 @@ class Writer:
         max_context_tokens: int = 8000
     ):
         self.llm = llm
-        self.evaluator_llm = evaluator_llm or llm  # Fallback to standard llm if not provided
-        self.max_context_tokens = max_context_tokens
+        # 对抗性博弈：评估节点可以配置为不同于生成节点的更高阶模型
+        self.evaluator_llm = evaluator_llm or llm 
         
-        # 加载模式配置
+        # 模式配置
         self.mode_config = mode_config or ModeConfig()
         self.set_mode(mode)
         
-        # Drama 专属：实例化评估器 (使用裁判专用的 LLM)
-        self.drama_evaluator = DramaEvaluator(self.evaluator_llm)
+        self.max_context_tokens = max_context_tokens
+        self.evaluator = DramaEvaluator(self.evaluator_llm)
+        
+        # 加载外部提示词模板
+        self.prompts = {}
+        try:
+            prompts_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), "config", "prompts.yaml")
+            if os.path.exists(prompts_path):
+                with open(prompts_path, 'r', encoding='utf-8') as f:
+                    self.prompts = yaml.safe_load(f).get("writer", {})
+        except Exception as e:
+            print(f"[-] 警告：加载 writer 提示词模板失败 ({e})，将使用默认内置模板。")
     
     def set_mode(self, mode: str):
         """设置写作模式"""
@@ -345,7 +355,7 @@ class Writer:
             evaluated_branches = []
             
             def _evaluate(content):
-                return self.drama_evaluator.evaluate_section(content) + (content,)
+                return self.evaluator.evaluate_section(content) + (content,)
                 
             with concurrent.futures.ThreadPoolExecutor(max_workers=len(branches)) as executor:
                 eval_futures = [executor.submit(_evaluate, b) for b in branches]
@@ -446,14 +456,10 @@ class Writer:
     
     def summarize_section(self, content: str, max_words: int = 300) -> str:
         """生成章节摘要"""
-        summary_prompt_template = self.current_mode_config.get(
-            'summary_prompt',
-            '请为以下内容生成简洁摘要，控制在{max_words}字以内。'
-        )
-        
-        prompt = f"""{summary_prompt_template.format(max_words=max_words)}
+        default_prompt = f"""请为以下章节内容生成一个简明扼要的摘要，控制在 {max_words} 字以内。
+如果内容包含人物行动、情节发展、关键信息，请务必提取。
 
-【内容】
+【原文】
 {content}
 
 【摘要】"""
