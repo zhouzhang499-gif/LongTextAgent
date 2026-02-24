@@ -6,7 +6,7 @@
 
 ## 架构
 
-```
+```text
 用户语音 → 小艺 → 工作流 → 你的API服务 → 返回生成内容 → 小艺播报
 ```
 
@@ -21,8 +21,9 @@ pip install fastapi uvicorn
 ### 2. 启动服务
 
 ```bash
-# 设置 API Key
+# 设置 API Key (以 DeepSeek 为例，如果是其他模型请设置对应的 Key 环境变量，如 OPENAI_API_KEY)
 set DEEPSEEK_API_KEY=sk-your-key
+
 
 # 启动服务
 python api_server.py
@@ -30,7 +31,7 @@ python api_server.py
 
 ### 3. 测试接口
 
-打开浏览器访问: http://localhost:8000/docs
+打开浏览器访问: <http://localhost:8000/docs>
 
 或使用 curl 测试:
 
@@ -101,7 +102,7 @@ server {
 
 ### 1. 登录小艺开放平台
 
-访问: https://developer.huawei.com/consumer/cn/hiai
+访问: <https://developer.huawei.com/consumer/cn/hiai>
 
 ### 2. 创建技能
 
@@ -111,16 +112,16 @@ server {
 
 ### 3. 配置 HTTP 插件
 
-| 配置项 | 值 |
-|--------|-----|
-| 请求地址 | `https://your-domain.com/api/xiaoyi` |
-| 请求方式 | POST |
-| Content-Type | application/json |
-| 请求体 | `{"query": "{{用户输入}}", "params": {"words": 3000}}` |
+| 配置项      | 值                                                     |
+|------------|--------------------------------------------------------|
+| 请求地址   | `https://your-domain.com/api/xiaoyi`                   |
+| 请求方式   | POST                                                   |
+| Content-Type| application/json                                      |
+| 请求体      | `{"query": "{{用户输入}}", "params": {"words": 3000}}` |
 
 ### 4. 配置响应解析
 
-```
+```text
 回复内容: {{data.reply}}
 ```
 
@@ -135,6 +136,7 @@ server {
 ### /api/xiaoyi (小艺专用)
 
 **请求:**
+
 ```json
 {
   "query": "用户输入的文本",
@@ -146,6 +148,7 @@ server {
 ```
 
 **响应:**
+
 ```json
 {
   "code": 0,
@@ -161,6 +164,7 @@ server {
 ### /api/quick (快速生成)
 
 **请求:**
+
 ```json
 {
   "prompt": "主题描述",

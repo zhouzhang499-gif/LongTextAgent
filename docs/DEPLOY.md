@@ -4,10 +4,10 @@
 
 ### 1. 购买云服务器
 
-| 平台 | 推荐配置 | 价格参考 |
-|------|----------|----------|
-| 华为云 ECS | 2核4G | ¥50-100/月 |
-| 阿里云 ECS | 2核4G | ¥50-100/月 |
+| 平台       | 推荐配置 | 价格参考   |
+|------------|----------|------------|
+| 华为云 ECS | 2核4G    | ¥50-100/月 |
+| 阿里云 ECS | 2核4G    | ¥50-100/月 |
 
 ### 2. 上传代码
 
@@ -28,7 +28,7 @@ cd LongTextAgent
 ### 3. 一键部署
 
 ```bash
-# 设置 API Key
+# 设置 API Key (如果使用其他模型，请相应设置 OPENAI_API_KEY 或 ANTHROPIC_API_KEY)
 export DEEPSEEK_API_KEY="sk-your-key"
 
 # 运行部署脚本
@@ -60,7 +60,7 @@ docker-compose up -d
 pip install -r requirements.txt
 
 # 启动服务
-export DEEPSEEK_API_KEY="sk-xxx"
+export DEEPSEEK_API_KEY="sk-xxx" # 可换用 OPENAI_API_KEY 等
 python api_server.py
 ```
 
@@ -104,6 +104,7 @@ docker-compose logs -f
 ## 常见问题
 
 ### 端口被占用
+
 ```bash
 # 查看占用端口的进程
 lsof -i :8000
@@ -112,12 +113,14 @@ netstat -tlnp | grep 8000
 ```
 
 ### Docker 权限问题
+
 ```bash
 sudo usermod -aG docker $USER
 # 退出重新登录
 ```
 
 ### SSL 证书续期
+
 ```bash
 # Let's Encrypt 证书 90 天过期
 certbot renew

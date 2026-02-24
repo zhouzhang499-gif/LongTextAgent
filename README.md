@@ -6,7 +6,8 @@
 
 - 🎯 **多模式支持** - 小说、研究报告、博客文章、技术文档
 - 🧠 **智能记忆** - 层级摘要管理，突破上下文限制
-- 🔍 **一致性检查** - 人物/设定/连续性自动检查
+- 🔍 **一致性检查** - 人物/设定/连续性分类自动检查
+- 🤖 **多模型支持** - 原生支持 DeepSeek, OpenAI, Claude, 通义千问, 智谱GLM, Moonshot 等
 - 📝 **任务分解** - 自动将长文拆分为 2000-3000 字的子任务
 - 🔧 **灵活配置** - YAML 配置，支持自定义模式
 
@@ -54,17 +55,17 @@ python main.py --check-file output/novel.md
 
 ## 📋 支持的模式
 
-| 模式 | 命令 | 适用场景 |
-|------|------|----------|
-| 📚 novel | `--mode novel` | 小说、故事、剧本 |
-| 📊 report | `--mode report` | 研究报告、行业分析、市场调研 |
-| 📝 article | `--mode article` | 公众号、博客、专栏文章 |
-| 📋 document | `--mode document` | API文档、用户指南、产品手册 |
-| 🔧 custom | `--mode custom` | 自定义配置 |
+| 模式       | 命令               | 适用场景                       |
+|------------|--------------------|--------------------------------|
+| 📚 novel   | `--mode novel`     | 小说、故事、剧本               |
+| 📊 report  | `--mode report`    | 研究报告、行业分析、市场调研   |
+| 📝 article | `--mode article`   | 公众号、博客、专栏文章         |
+| 📋 document| `--mode document`  | API文档、用户指南、产品手册    |
+| 🔧 custom  | `--mode custom`    | 自定义配置                     |
 
 ## 🏗️ 系统架构
 
-```
+```text
 ┌─────────────────────────────────────────────────────────────┐
 │                        用户输入                              │
 │              大纲 + 设定 + 目标字数 + 模式                    │
@@ -102,7 +103,7 @@ python main.py --check-file output/novel.md
 
 ## 📁 项目结构
 
-```
+```text
 LongTextAgent/
 ├── config/
 │   ├── settings.yaml      # 基础配置 (LLM、生成参数)
@@ -155,7 +156,7 @@ chapters:
 
 ### 纯文本格式
 
-```
+```text
 第一章：主角觉醒异能
 第二章：神秘组织接触
 第三章：第一次战斗
@@ -163,15 +164,15 @@ chapters:
 
 ## ⚙️ 命令行参数
 
-| 参数 | 说明 | 默认值 |
-|------|------|--------|
-| `--outline, -o` | 大纲文件路径 | (必填) |
-| `--mode, -m` | 生成模式 | `novel` |
-| `--target-words, -w` | 目标字数 | `10000` |
-| `--title, -t` | 作品标题 | `未命名作品` |
-| `--config, -c` | 配置文件 | `config/settings.yaml` |
-| `--no-check` | 禁用一致性检查 | `False` |
-| `--list-modes` | 显示所有模式 | - |
+| 参数                 | 说明               | 默认值                   |
+|----------------------|--------------------|--------------------------|
+| `--outline, -o`      | 大纲文件路径       | (必填)                   |
+| `--mode, -m`         | 生成模式           | `novel`                  |
+| `--target-words, -w` | 目标字数           | `10000`                  |
+| `--title, -t`        | 作品标题           | `未命名作品`             |
+| `--config, -c`       | 配置文件           | `config/settings.yaml`   |
+| `--no-check`         | 禁用一致性检查     | `False`                  |
+| `--list-modes`       | 显示所有模式       | -                        |
 
 ## 🧠 核心算法
 
@@ -184,7 +185,7 @@ chapters:
 
 ### 上下文构建
 
-```
+```text
 上下文 = 世界观设定 (固定)
        + 最近5条章节摘要 (滚动更新)
        + 前文500字 (衔接参考)
@@ -195,13 +196,13 @@ chapters:
 
 系统自动检查以下内容：
 
-| 检查项 | 说明 |
-|--------|------|
-| 人物名称 | 检测名称变体/笔误 |
-| 行为一致性 | 人物行为是否符合设定性格 |
-| 连续性 | 场景过渡、状态衔接是否自然 |
-| 设定冲突 | 内容是否与世界观矛盾 |
-| 逻辑漏洞 | LLM 深度检查前后矛盾 |
+| 检查项       | 说明                           |
+|--------------|--------------------------------|
+| 人物名称     | 检测名称变体/笔误              |
+| 行为一致性   | 人物行为是否符合设定性格       |
+| 连续性       | 场景过渡、状态衔接是否自然     |
+| 设定冲突     | 内容是否与世界观矛盾           |
+| 逻辑漏洞     | LLM 深度检查前后矛盾           |
 
 发现问题时自动生成检查报告。
 
@@ -210,38 +211,56 @@ chapters:
 ### config/settings.yaml
 
 ```yaml
-llm:
+# 创作与评估解耦的双模型架构
+generator_llm:
   provider: deepseek
-  api_key: ${DEEPSEEK_API_KEY}  # 从环境变量读取
+  api_key: "sk-your-key"  # 或使用对应环境变量
+  model: deepseek-chat
+  temperature: 0.7
+
+evaluator_llm:
+  provider: deepseek
+  api_key: "sk-your-key"
   model: deepseek-chat
   temperature: 0.7
 
 generation:
   words_per_section: 2500  # 每个子任务的目标字数
-  min_tolerance: 0.8       # 最小字数容差
-  max_tolerance: 1.2       # 最大字数容差
+  min_words_tolerance: 0.8 # 最小字数容差
+  max_words_tolerance: 1.2 # 最大字数容差
+  summary_max_words: 300
 
 context:
-  max_context_tokens: 8000
   recent_summaries_count: 5
+  max_context_tokens: 8000
+
+consistency:
+  enabled: true
+  check_character_names: true
+  check_timeline: true
+  check_settings: true
+
+evaluation:
+  target_pass_score: 81
+  max_retries: 3
 
 output:
   directory: ./output
+  filename_format: "{title}_{timestamp}.md"
 ```
 
 ## 📊 性能参考
 
-| 目标字数 | 章节数 | 预计耗时 | API 调用次数 |
-|----------|--------|----------|--------------|
-| 5,000 | 2-3 | 3-5 分钟 | ~10 |
-| 10,000 | 4-5 | 8-12 分钟 | ~20 |
-| 30,000 | 10-15 | 30-45 分钟 | ~60 |
+| 目标字数 | 章节数 | 预计耗时     | API 调用次数 |
+|----------|--------|--------------|--------------|
+| 5,000    | 2-3    | 3-5 分钟     | ~10          |
+| 10,000   | 4-5    | 8-12 分钟    | ~20          |
+| 30,000   | 10-15  | 30-45 分钟   | ~60          |
 
 *实际耗时取决于网络和 API 响应速度*
 
 ## 🛠️ 开发计划
 
-- [ ] 支持更多 LLM 提供商（OpenAI、Claude、通义千问）
 - [ ] 添加 Web UI 界面
 - [ ] 支持断点续写
 - [ ] 添加 RAG 检索增强
