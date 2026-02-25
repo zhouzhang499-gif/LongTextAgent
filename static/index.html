@@ -1,344 +1,492 @@
 <!DOCTYPE html>
-<html lang="zh-CN" data-theme="dark">
+<html lang="zh-CN">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>LongTextAgent 创作台</title>
-    
-    <!-- Tailwind CSS & DaisyUI -->
-    <link href="https://cdn.jsdelivr.net/npm/daisyui@4.7.2/dist/full.min.css" rel="stylesheet" type="text/css" />
-    <script src="https://cdn.tailwindcss.com"></script>
-    
-    <!-- Vue 3 -->
+    <title>LongTextAgent - 创作主控台</title>
+    <!-- CDN Dependencies -->
     <script src="https://unpkg.com/vue@3/dist/vue.global.js"></script>
-    
-    <!-- Marked.js for Markdown rendering -->
+    <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
-
+    <link href="https://fonts.googleapis.com/css2?family=Fira+Code:wght@400;500&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+    
     <style>
-        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
-        
         body {
-            font-family: 'Inter', system-ui, -apple-system, sans-serif;
-            background: linear-gradient(135deg, #0f172a 0%, #1e1b4b 100%);
-            min-height: 100vh;
-            color: #e2e8f0;
+            font-family: 'Inter', -apple-system, sans-serif;
+            background-color: #f3f3f3;
+            color: #333333;
+        }
+        .font-mono {
+            font-family: 'Fira Code', monospace;
+        }
+        
+        /* VS Code Style Scrollbar */
+        ::-webkit-scrollbar { width: 10px; height: 10px; }
+        ::-webkit-scrollbar-track { background: transparent; }
+        ::-webkit-scrollbar-thumb { background: #c1c1c1; border-radius: 0px; }
+        ::-webkit-scrollbar-thumb:hover { background: #a8a8a8; }
+        
+        textarea {
+            resize: none;
         }
 
-        .glass-panel {
-            background: rgba(30, 41, 59, 0.7);
-            backdrop-filter: blur(16px);
-            -webkit-backdrop-filter: blur(16px);
-            border: 1px solid rgba(255, 255, 255, 0.1);
-            box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
+        /* -------------------------------------
+           Scanner Animation (Hacker Mode)
+        -------------------------------------- */
+        .scanner-container {
+            position: relative;
+            background-color: #1e1e1e; /* VS Code 暗色模式模拟 */
+            color: #d4d4d4;
+            border-radius: 4px;
+        }
+        .scanner-laser {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 2px;
+            background-color: #007acc;
+            box-shadow: 0 0 12px 3px rgba(0, 122, 204, 0.7);
+            animation: scan 2.5s cubic-bezier(0.4, 0, 0.2, 1) infinite;
+            z-index: 10;
+        }
+        @keyframes scan {
+            0% { top: 0%; opacity: 0; }
+            10% { opacity: 1; }
+            90% { opacity: 1; }
+            100% { top: 100%; opacity: 0; }
+        }
+        
+        .pulse-text {
+            animation: pulse 1.5s ease-in-out infinite;
+        }
+        @keyframes pulse {
+            0%, 100% { opacity: 0.5; }
+            50% { opacity: 1; }
         }
 
-        .gradient-text {
-            background: linear-gradient(to right, #3b82f6, #8b5cf6, #ec4899);
-            -webkit-background-clip: text;
-            -webkit-text-fill-color: transparent;
-            background-clip: text;
-        }
-
+        /* Markdown Rendering Defaults */
         .markdown-body {
             line-height: 1.8;
-            font-size: 1.05rem;
+            font-size: 15px;
+            color: #24292f;
         }
-        .markdown-body h1 { font-size: 1.8rem; font-weight: bold; margin-top: 1.5rem; margin-bottom: 1rem; color: #f8fafc; }
-        .markdown-body h2 { font-size: 1.5rem; font-weight: bold; margin-top: 1.5rem; margin-bottom: 1rem; color: #f1f5f9; border-bottom: 1px solid #334155; padding-bottom: 0.5rem; }
-        .markdown-body h3 { font-size: 1.25rem; font-weight: bold; margin-top: 1.5rem; margin-bottom: 0.5rem; color: #e2e8f0; }
-        .markdown-body p { margin-bottom: 1rem; color: #cbd5e1; }
-        .markdown-body ul, .markdown-body ol { margin-left: 1.5rem; margin-bottom: 1rem; color: #cbd5e1; list-style-type: disc; }
-        .markdown-body blockquote { border-left: 4px solid #8b5cf6; padding-left: 1rem; font-style: italic; color: #94a3b8; margin-bottom: 1rem; background: rgba(139, 92, 246, 0.1); padding: 0.5rem 1rem; border-radius: 0 0.5rem 0.5rem 0;}
+        .markdown-body h1 {
+            font-size: 2em; margin-bottom: 0.8em; font-weight: 600; padding-bottom: 0.3em;
+            border-bottom: 1px solid #d0d7de;
+        }
+        .markdown-body h2 {
+            font-size: 1.5em; margin-top: 1.5em; margin-bottom: 0.8em; font-weight: 600;
+        }
+        .markdown-body p { margin-bottom: 1.2M; }
+        .markdown-body strong { font-weight: 600; }
     </style>
 </head>
-<body class="p-4 md:p-8">
+<body class="overflow-hidden">
 
-<div id="app" class="max-w-7xl mx-auto">
-    <!-- Header -->
-    <header class="text-center mb-10">
-        <h1 class="text-4xl md:text-6xl font-extrabold mb-4 tracking-tight">
-            <span class="gradient-text">LongText Agent</span> Studio
-        </h1>
-        <p class="text-slate-400 text-lg">基于双模型护航 (Kimi + DeepSeek) 的高质量长文本/短剧生成平台</p>
-    </header>
-
-    <div class="grid grid-cols-1 lg:grid-cols-12 gap-8">
+<div id="app" class="flex h-screen w-full">
+    
+    <!-- 侧边栏 (Sidebar - Configuration) -->
+    <div class="w-[380px] min-w-[380px] bg-[#f8f9fa] border-r border-[#e5e7eb] flex flex-col shadow-sm z-10 shrink-0">
         
-        <!-- Left Panel: Configuration -->
-        <div class="lg:col-span-5">
-            <div class="glass-panel rounded-2xl p-6 lg:p-8 sticky top-8">
-                <h2 class="text-2xl font-bold mb-6 text-white flex items-center gap-2">
-                    <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6 text-blue-400" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" /></svg>
-                    创作控制台
-                </h2>
+        <!-- Header -->
+        <div class="h-12 border-b border-[#e5e7eb] bg-white flex items-center justify-between px-4 shrink-0">
+            <h1 class="text-xs font-bold text-gray-700 tracking-widest uppercase">⚙️ Long-Text-Agent</h1>
+            <span class="text-[10px] bg-blue-100 text-blue-800 px-2 py-0.5 rounded border border-blue-200 uppercase font-mono tracking-wider">v2.0 Core</span>
+        </div>
+        
+        <!-- Form Area -->
+        <div class="p-5 flex-1 overflow-y-auto space-y-6 text-[13px] custom-scroll">
+            
+            <!-- Title -->
+            <div class="space-y-1.5">
+                <label class="font-semibold text-gray-700 uppercase tracking-widest text-[11px]">PROJECT.TITLE</label>
+                <input v-model="title" type="text" 
+                       class="w-full border border-gray-300 rounded-sm px-3 py-2 bg-white focus:outline-none focus:border-[#007acc] focus:ring-1 focus:ring-[#007acc] transition-colors" 
+                       placeholder="如：修仙界最强鉴宝师">
+            </div>
 
-                <div class="form-control mb-4">
-                    <label class="label"><span class="label-text text-slate-300">作品标题</span></label>
-                    <input type="text" v-model="form.title" placeholder="例如：霸总复仇记" class="input input-bordered w-full bg-slate-800/50 border-slate-600 focus:border-blue-500 text-white" />
+            <!-- Mode Selection -->
+            <div class="space-y-1.5">
+                <label class="font-semibold text-gray-700 uppercase tracking-widest text-[11px]">ENGINE.MODE</label>
+                <div class="grid grid-cols-2 gap-2">
+                    <button v-for="m in modes" :key="m.id" 
+                            @click="mode = m.id"
+                            :class="['px-3 py-2 text-left rounded-sm border transition-colors flex items-center space-x-2', 
+                                    mode === m.id ? 'bg-[#e5f1fb] border-[#007acc] text-[#007acc] font-medium' : 'bg-white border-gray-200 text-gray-600 hover:bg-gray-50']">
+                        <span class="text-base">{{m.icon}}</span><span>{{m.name}}</span>
+                    </button>
                 </div>
+            </div>
 
-                <div class="grid grid-cols-2 gap-4 mb-4">
-                    <div class="form-control">
-                        <label class="label"><span class="label-text text-slate-300">创作模式</span></label>
-                        <select v-model="form.mode" class="select select-bordered w-full bg-slate-800/50 border-slate-600 focus:border-blue-500 text-white">
-                            <option value="drama">🎬 短剧/漫剧爽文 (推荐)</option>
-                            <option value="novel">📚 传统小说</option>
-                            <option value="report">📊 研究报告</option>
-                            <option value="article">📝 爆款文章</option>
-                        </select>
+            <!-- Outline -->
+            <div class="space-y-1.5 flex flex-col h-[280px]">
+                <label class="font-semibold text-gray-700 uppercase tracking-widest text-[11px] flex justify-between">
+                    <span>SOURCE.OUTLINE</span>
+                    <span class="text-gray-400 font-normal">支持 Markdown / 纯文本直接粘贴</span>
+                </label>
+                <textarea v-model="outline" 
+                          class="flex-1 w-full border border-gray-300 rounded-sm px-3 py-2 bg-[#ffffff] focus:outline-none focus:border-[#007acc] focus:ring-1 focus:ring-[#007acc] transition-colors font-mono text-[12px] leading-relaxed shadow-inner" 
+                          placeholder="无需繁琐拆解，请将您数百甚至是上千字的完整小说大纲直接黏贴于此，我们的内部规划器将会全自动将其无缝对齐至各个章节。"></textarea>
+            </div>
+            
+            <!-- Global Settings -->
+            <div class="space-y-1.5">
+                <label class="font-semibold text-gray-700 uppercase tracking-widest text-[11px]">GLOBAL.SETTINGS (可选)</label>
+                <textarea v-model="settings" 
+                          class="w-full border border-gray-300 rounded-sm px-3 py-2 bg-white focus:outline-none focus:border-[#007acc] focus:ring-1 focus:ring-[#007acc] transition-colors font-mono text-[12px] h-20" 
+                          placeholder="填写世界观预设。如：这是一个赛博朋克修真世界，主角性格极度腹黑。"></textarea>
+            </div>
+
+            <!-- Tweak Controls -->
+            <div class="p-4 bg-white border border-gray-200 rounded-sm space-y-5">
+                <!-- Target Words -->
+                <div class="space-y-2">
+                    <div class="flex items-center justify-between">
+                        <label class="font-semibold text-gray-700 uppercase tracking-widest text-[11px]">TARGET.WORDS</label>
+                        <span class="text-[#007acc] font-mono font-bold">{{targetWords.toLocaleString()}} <span class="text-gray-400 font-normal text-xs">字</span></span>
                     </div>
-                    
-                    <div class="form-control">
-                        <label class="label"><span class="label-text text-slate-300">目标字数</span></label>
-                        <input type="number" v-model="form.target_words" min="500" max="20000" step="500" class="input input-bordered w-full bg-slate-800/50 border-slate-600 focus:border-blue-500 text-white" />
-                    </div>
+                    <input type="range" v-model="targetWords" min="1000" max="20000" step="1000" class="w-full accent-[#007acc]">
                 </div>
-
-                <div class="form-control mb-6">
-                    <label class="label">
-                        <span class="label-text text-slate-300">核心大纲与要求</span>
-                        <span class="label-text-alt text-slate-400">越详细效果越好</span>
+                
+                <!-- Checker Toggle -->
+                <div class="flex items-center justify-between pt-2 border-t border-gray-100">
+                    <label class="font-semibold text-gray-700 uppercase tracking-widest text-[11px] flex items-center" title="开启将大幅提升逻辑严谨度并在防崩坏方面起决定性作用">
+                        逻辑自检审计引擎 (Checker)
                     </label>
-                    <textarea v-model="form.outline" class="textarea textarea-bordered h-48 bg-slate-800/50 border-slate-600 focus:border-blue-500 text-white leading-relaxed" placeholder="请输入故事大纲、角色设定、爽点设计。如果选择了短剧模式，请务必强调【黄金三秒】和【打脸反击】的情节..."></textarea>
+                    <label class="relative inline-flex items-center cursor-pointer">
+                        <input type="checkbox" v-model="enableCheck" class="sr-only peer">
+                        <div class="w-9 h-5 bg-gray-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-[#007acc]"></div>
+                    </label>
                 </div>
 
-                <button 
-                    @click="startGeneration" 
-                    :disabled="isGenerating"
-                    class="btn btn-primary w-full border-0 bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-500 hover:to-purple-500 text-white font-bold text-lg shadow-lg shadow-blue-900/50 transition-all duration-300 hover:scale-105"
-                >
-                    <span v-if="!isGenerating">
-                        <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6 inline-block mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z" /></svg>
-                        开始 AI 创作
-                    </span>
-                    <span v-else class="flex items-center justify-center">
-                        <span class="loading loading-spinner loading-md mr-2"></span>
-                        {{ generationStatusText }}...
+                <!-- HITL Toggle -->
+                <div class="flex items-center justify-between pt-2 border-t border-gray-100">
+                    <label class="font-semibold text-[#007acc] uppercase tracking-widest text-[11px] flex items-center" title="每写完一章，弹出来让你修改定稿，然后再推进后续生成，绝不写崩！">
+                        人机共创模式 (逐章修改)
+                    </label>
+                    <label class="relative inline-flex items-center cursor-pointer">
+                        <input type="checkbox" v-model="interactive" class="sr-only peer">
+                        <div class="w-9 h-5 bg-gray-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-[#007acc]"></div>
+                    </label>
+                </div>
+            </div>
+
+        </div>
+
+        <!-- Footer / Action Area -->
+        <div class="p-4 border-t border-[#e5e7eb] bg-[#f8f9fa] shrink-0">
+            <button @click="startGeneration" :disabled="isGenerating"
+                    class="w-full flex items-center justify-center space-x-2 py-2.5 px-4 bg-[#007acc] hover:bg-[#005a9e] text-white rounded-sm font-medium disabled:opacity-50 disabled:cursor-not-allowed transition-colors shadow">
+                
+                <svg v-if="isGenerating" class="animate-spin -ml-1 mr-2 h-4 w-4 text-white" fill="none" viewBox="0 0 24 24">
+                    <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                    <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                </svg>
+                
+                <svg v-else class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z"></path><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+                
+                <span v-if="!isGenerating" class="tracking-widest uppercase text-xs">执行渲染编译</span>
+                <span v-else class="tracking-widest uppercase text-xs">引擎全速运转中...</span>
+            </button>
+        </div>
+    </div>
+
+    <!-- 主试图 (Main Layout - Editor View) -->
+    <div class="flex-1 bg-white flex flex-col relative overflow-hidden">
+        
+        <!-- Tabs Header -->
+        <div class="h-12 border-b border-[#e5e7eb] bg-[#f3f3f3] flex items-end px-2 space-x-1 shrink-0">
+            <!-- Active Tab -->
+            <div class="bg-white border text-[#333333] border-b-transparent border-[#e5e7eb] px-4 py-2 font-mono text-[11px] rounded-t-lg flex items-center z-10 -mb-[1px]">
+                <span class="text-[#007acc] mr-2">{" "}</span> output.md
+                <button v-if="finalContent" @click="copyContent" class="ml-4 hover:bg-gray-100 p-1 rounded transition text-gray-500 hover:text-[#007acc]" title="复制代码">
+                    <svg fill="none" stroke="currentColor" class="w-3.5 h-3.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"></path></svg>
+                </button>
+            </div>
+            <!-- Progress Status Tracker -->
+            <div v-if="isGenerating" class="flex items-center text-[#007acc] font-mono text-[11px] px-4 py-2 mb-[1px] ml-auto animate-pulse max-w-lg truncate">
+                <span class="w-2 h-2 rounded-full bg-[#007acc] mr-2"></span>
+                <span>STATUS: {{currentProgress}}</span>
+            </div>
+        </div>
+
+        <!-- Editor Content Space -->
+        <div class="flex-1 overflow-x-hidden overflow-y-auto relative bg-white">
+            
+            <!-- Idle State. Empty watermark -->
+            <div v-if="!isGenerating && !finalContent" class="absolute inset-0 flex flex-col items-center justify-center text-gray-300 pointer-events-none select-none">
+                <img src="https://api.iconify.design/vscode-icons:file-type-markdown.svg" class="w-32 h-32 mb-6 opacity-20 grayscale" alt="Markdown Log">
+                <h2 class="text-2xl font-light tracking-[0.2em] text-gray-300">WAITING FOR INPUT</h2>
+                <p class="text-[13px] mt-2 tracking-wider">请在左侧主控台配置大纲并启动引擎</p>
+            </div>
+
+            <!-- "Hacker Scanner" Terminal State (Generating) -->
+            <div v-if="isGenerating" class="absolute inset-2 scanner-container shadow-inner flex overflow-hidden">
+                <div class="scanner-laser"></div>
+                <!-- Line Numbers -->
+                <div class="w-12 bg-[#1e1e1e] border-r border-[#333333] pt-6 flex flex-col items-end pr-3 text-[#858585] font-mono text-[13px] leading-8 shrink-0 select-none">
+                    <div v-for="n in 25" :key="n">{{n}}</div>
+                </div>
+                <!-- Terminal Output (Logs) -->
+                <div class="flex-1 px-4 pt-6 pb-4 overflow-hidden flex flex-col border-l border-[#404040]">
+                    <div class="flex-1"></div> <!-- Spacer to push text down to look like a console -->
+                    <div class="flex flex-col space-y-2">
+                        <div v-for="(line, idx) in scannerLines" :key="idx" 
+                             class="text-[#d4d4d4] font-mono text-[13px] whitespace-nowrap overflow-hidden text-ellipsis transition-opacity duration-300" 
+                             :class="{'text-[#4ec9b0] font-semibold pulse-text duration-100': idx === scannerLines.length - 1, 'opacity-40': idx < scannerLines.length - 4, 'opacity-70': idx >= scannerLines.length - 4 && idx < scannerLines.length - 1}">
+                            <span class="text-[#569cd6]">sys</span><span class="text-[#cccccc]">.</span><span class="text-[#dcdcaa]">log</span><span class="text-[#cccccc]">(</span><span class="text-[#ce9178]">"{{line}}"</span><span class="text-[#cccccc]">);</span>
+                        </div>
+                        <div class="text-[#4ec9b0] font-mono text-[13px] mt-2 pulse-text relative before:content-['>_'] before:mr-2">
+                            [[ {{currentProgress}} ]]
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Finished Content (Markdown Body) -->
+            <div v-if="!isGenerating && finalContent" class="p-10 max-w-4xl mx-auto">
+                <div class="markdown-body" v-html="parsedContent"></div>
+            </div>
+            
+        </div>
+    </div>
+
+    <!-- 🌟 HITL 悬停修改弹窗 (Modal) -->
+    <div v-if="isPaused" class="absolute inset-0 z-50 bg-black/50 backdrop-blur-sm flex items-center justify-center p-6 transition-all">
+        <div class="bg-white rounded shadow-2xl w-full max-w-5xl h-[90vh] flex flex-col overflow-hidden border border-gray-200">
+            <!-- Modal Header -->
+            <div class="h-14 bg-[#f8f9fa] border-b border-gray-200 flex items-center justify-between px-6 shrink-0">
+                <h3 class="font-bold text-gray-800 flex items-center tracking-wide">
+                    <span class="w-2.5 h-2.5 rounded-full bg-[#007acc] mr-3 animate-pulse"></span>
+                    引擎挂起：请检阅并魔改当前章节
+                </h3>
+                <span class="text-xs text-[#007acc] font-mono font-bold uppercase tracking-widest bg-blue-50 px-2 py-1 rounded">Status: PAUSED_FOR_REVIEW</span>
+            </div>
+            <!-- Modal Editor -->
+            <div class="flex-1 p-0 overflow-hidden bg-[#fafafa]">
+                <textarea v-model="pausedContent" class="w-full h-full p-8 font-mono text-[15px] leading-8 text-gray-800 focus:outline-none resize-none bg-transparent custom-scroll shadow-inner"></textarea>
+            </div>
+            <!-- Modal Actions -->
+            <div class="h-16 bg-white border-t border-gray-200 flex items-center justify-end px-6 space-x-4 shrink-0">
+                <span class="text-xs text-gray-400 mr-auto flex items-center">
+                    <svg class="w-4 h-4 mr-1.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+                    您可以随意篡改上面的文本，点击右侧按钮后，大模型将在此基础上继续生长后续剧情。
+                </span>
+                
+                <button @click="resumeGeneration" :disabled="isResuming" class="px-6 py-2.5 bg-[#007acc] hover:bg-[#005a9e] text-white rounded-sm font-medium shadow transition-colors flex items-center justify-center min-w-[200px] tracking-widest text-sm">
+                    <span v-if="!isResuming" class="flex items-center"><svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"></path></svg> 注入魔改并继续推演</span>
+                    <span v-else class="flex items-center">
+                        <svg class="animate-spin -ml-1 mr-2 h-4 w-4 text-white" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg> 数据注入中...
                     </span>
                 </button>
             </div>
         </div>
-
-        <!-- Right Panel: Result Preview -->
-        <div class="lg:col-span-7">
-            <div class="glass-panel rounded-2xl h-full min-h-[600px] flex flex-col overflow-hidden relative">
-                
-                <!-- Status Overlay (When generating) -->
-                <div v-if="isGenerating" class="absolute inset-0 bg-slate-900/60 backdrop-blur-sm z-10 flex flex-col items-center justify-center p-8 text-center transition-all">
-                    <div class="w-24 h-24 mb-6 relative">
-                        <div class="absolute inset-0 rounded-full border-t-4 border-blue-500 animate-spin"></div>
-                        <div class="absolute inset-2 rounded-full border-r-4 border-purple-500 animate-spin" style="animation-direction: reverse; animation-duration: 1.5s;"></div>
-                        <div class="absolute inset-4 rounded-full border-b-4 border-pink-500 animate-spin" style="animation-duration: 2s;"></div>
-                        <svg xmlns="http://www.w3.org/2000/svg" class="h-8 w-8 text-white absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19.428 15.428a2 2 0 00-1.022-.547l-2.387-.477a6 6 0 00-3.86.517l-.318.158a6 6 0 01-3.86.517L6.05 15.21a2 2 0 00-1.806.547M8 4h8l-1 1v5.172a2 2 0 00.586 1.414l5 5c1.26 1.26.367 3.414-1.415 3.414H4.828c-1.782 0-2.674-2.154-1.414-3.414l5-5A2 2 0 009 10.172V5L8 4z" /></svg>
-                    </div>
-                    <h3 class="text-2xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-blue-400 to-purple-400 mb-2">{{ generationStatusText }}</h3>
-                    <p class="text-slate-300 max-w-md">
-                        长文本生成正在后台进行中。如果是短剧模式，裁判总监正在对每一幕进行严苛的打分与重写迭代，这可能需要几分钟时间，请耐心等待。
-                    </p>
-                    <div class="mt-8 w-full max-w-sm">
-                        <progress class="progress progress-primary w-full" :value="generateProgress" max="100"></progress>
-                    </div>
-                    <div class="mt-4 text-sm text-slate-400 font-mono flex items-center gap-2">
-                        <span class="relative flex h-3 w-3">
-                          <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-blue-400 opacity-75"></span>
-                          <span class="relative inline-flex rounded-full h-3 w-3 bg-blue-500"></span>
-                        </span>
-                        Kimi (执笔) & DeepSeek (裁判) 正在疯狂运转...
-                    </div>
-                </div>
-
-                <!-- Header -->
-                <div class="border-b border-slate-700/50 bg-slate-800/80 p-4 flex justify-between items-center z-0">
-                    <h2 class="text-lg font-bold text-white flex items-center gap-2">
-                        <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 text-purple-400" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M4 4a2 2 0 012-2h4.586A2 2 0 0112 2.586L15.414 6A2 2 0 0116 7.414V16a2 2 0 01-2 2H6a2 2 0 01-2-2V4zm2 6a1 1 0 011-1h6a1 1 0 110 2H7a1 1 0 01-1-1zm1 3a1 1 0 100 2h6a1 1 0 100-2H7z" clip-rule="evenodd" /></svg>
-                        生成结果预览
-                    </h2>
-                    <div class="badge badge-primary badge-outline" v-if="resultContent">已完成 {{ wordCount }} 字</div>
-                </div>
-
-                <!-- Content Area -->
-                <div class="flex-1 overflow-y-auto p-6 md:p-8 bg-slate-900/50">
-                    <div v-if="!resultContent && !isGenerating" class="h-full flex flex-col items-center justify-center text-slate-500">
-                        <svg xmlns="http://www.w3.org/2000/svg" class="h-20 w-20 mb-4 opacity-50" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 002-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" /></svg>
-                        <p class="text-lg">配置大纲并点击左侧按钮开始生成</p>
-                    </div>
-
-                    <!-- Rendered Markdown -->
-                    <div v-else-if="resultContent" id="markdown-container" class="markdown-body" v-html="renderedContent"></div>
-                </div>
-                
-                <!-- Action Bar -->
-                <div v-if="resultContent" class="border-t border-slate-700/50 bg-slate-800/80 p-4 flex justify-end gap-3 z-0">
-                    <button @click="copyContent" class="btn btn-sm btn-outline text-slate-300 hover:text-white">
-                        <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 5H6a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2v-1M8 5a2 2 0 002 2h2a2 2 0 002-2M8 5a2 2 0 012-2h2a2 2 0 012 2m0 0h2a2 2 0 012 2v3m2 4H10m0 0l3-3m-3 3l3 3" /></svg>
-                        复制全文
-                    </button>
-                    <button @click="downloadContent" class="btn btn-sm btn-primary">
-                        <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" /></svg>
-                        下载 MD 文件
-                    </button>
-                </div>
-            </div>
-        </div>
     </div>
+
 </div>
 
 <script>
-    const { createApp, ref, computed, onMounted } = Vue;
+    const { createApp, ref, computed } = Vue;
 
     createApp({
         setup() {
-            const form = ref({
-                title: '霸道总裁的契约赘婿',
-                mode: 'drama',
-                target_words: 3000,
-                outline: `第一幕：家族晚宴上的惊变
-- 楚天（男主）作为林家赘婿，在岳父寿宴上被林家小舅子当众泼满身红酒，并甩出伪造的出轨照片逼他净身出户。
-- 妻子林婉儿冷眼旁观，不发一语，默许了家族的欺辱。
-- 楚天冷笑，毫不犹豫签下离婚协议。下一秒，首富的直升机降落在宴会厅外，全球首富管家推门而入，单膝跪地：“少爷，三年考核期已满，千亿帝国等您继承。”
-
-第二幕：打脸绿茶前妻
-- 林家公司资金链断裂，林婉儿去首富财团求职求投资。
-- 在面试会议室，林婉儿卑躬屈膝，抬头却发现坐在总裁椅上转过来的人，正是她刚扫地出门的“废物赘婿”楚天。
-- 楚天冷冷将她的计划书扔进垃圾桶...`
-            });
-
-            const isGenerating = ref(false);
-            const generationStatusText = ref('AI 构思中');
-            const generateProgress = ref(0);
-            const resultContent = ref('');
-            const wordCount = ref(0);
+            // 左侧表单数据绑定
+            const title = ref("新建史诗长卷");
+            const outline = ref("");
+            const targetWords = ref(5000);
+            const mode = ref("novel");
+            const enableCheck = ref(true);
+            const interactive = ref(true); // 默认开启人机共创
+            const settings = ref("");
             
-            let pollInterval = null;
+            // 模式映射
+            const modes = [
+                { id: 'novel', name: '小说引擎', icon: '📖' },
+                { id: 'drama', name: '短剧爽文', icon: '🎬' },
+                { id: 'report', name: '专业报告', icon: '📊' },
+                { id: 'document', name: '技术文档', icon: '💻' }
+            ];
 
-            const renderedContent = computed(() => {
-                if (!resultContent.value) return '';
-                return marked.parse(resultContent.value);
-            });
+            // 引擎状态控制
+            const isGenerating = ref(false);
+            const taskId = ref(null);
+            const isPaused = ref(false);
+            const isResuming = ref(false);
+            const pausedContent = ref("");
+            
+            // 视图状态
+            const currentProgress = ref("");
+            const finalContent = ref("");
+            const parsedContent = computed(() => marked.parse(finalContent.value || ''));
 
+            // 炫酷扫描动画日志系统
+            const scannerLines = ref([]);
+            let scannerInterval = null;
+
+            // 复制产物
+            const copyContent = () => {
+                navigator.clipboard.writeText(finalContent.value).then(() => {
+                    alert('全文复制成功！');
+                }).catch(err => {
+                    console.error('复制失败', err);
+                    alert('由于浏览器安全限制，复制失败，请手动全选。');
+                });
+            }
+            
+            // 启动生成主入口
             const startGeneration = async () => {
-                if (!form.value.outline || !form.value.title) {
-                    alert('请填写完整的标题和大纲！');
+                if (!outline.value.trim()) {
+                    alert("⚠️ 请在左侧粘入你的大纲数据！");
                     return;
                 }
-
+                
                 isGenerating.value = true;
-                resultContent.value = '';
-                generateProgress.value = 10;
-                generationStatusText.value = '提交生成规划';
+                finalContent.value = "";
+                currentProgress.value = "Establishing engine connection...";
+                startScannerAnimation();
 
                 try {
                     const response = await fetch('/api/generate', {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify({
-                            title: form.value.title,
-                            outline: form.value.outline,
-                            target_words: parseInt(form.value.target_words),
-                            mode: form.value.mode,
-                            enable_check: true
+                            title: title.value,
+                            outline: outline.value,
+                            target_words: parseInt(targetWords.value),
+                            mode: mode.value,
+                            enable_check: enableCheck.value,
+                            interactive: interactive.value,
+                            settings: settings.value.trim() ? { world: settings.value } : null
                         })
                     });
-
+                    
                     const data = await response.json();
-                    if (data.task_id) {
-                        generateProgress.value = 30;
-                        pollStatus(data.task_id);
-                    } else {
-                        throw new Error(data.detail || '请求失败');
+                    if (!response.ok) {
+                        throw new Error(data.detail || JSON.stringify(data));
                     }
-                } catch (error) {
-                    alert('生成发起了请求，但遭遇错误: ' + error.message);
+                    
+                    taskId.value = data.task_id;
+                    pollStatus();
+                } catch (e) {
+                    alert("初始化生成请求失败: " + e.message);
                     isGenerating.value = false;
+                    clearInterval(scannerInterval);
                 }
             };
 
-            const pollStatus = (taskId) => {
-                let ticks = 0;
-                if (pollInterval) clearInterval(pollInterval);
+            // 状态轮询
+            const pollStatus = async () => {
+                if (!taskId.value) return;
                 
-                pollInterval = setInterval(async () => {
-                    ticks++;
-                    // Fake progress animation
-                    if (generateProgress.value < 85) {
-                        generateProgress.value += 1;
+                try {
+                    const response = await fetch(`/api/task/${taskId.value}`);
+                    const data = await response.json();
+                    
+                    currentProgress.value = data.progress || data.status;
+                    pushScannerLog("ACK: " + currentProgress.value);
+                    
+                    if (data.status === 'completed') {
+                        finishGeneration(data.content);
+                    } else if (data.status === 'failed') {
+                        throw new Error(data.error || "Unknown Failure");
+                    } else if (data.status === 'paused') {
+                        isPaused.value = true;
+                        pausedContent.value = data.paused_content;
+                        // 挂起时暂停轮询，等待用户手动点击继续
+                    } else {
+                        // 继续轮询
+                        setTimeout(pollStatus, 3000); 
                     }
-
-                    // Rotating fun texts
-                    const statusTexts = [
-                        "Kimi 正在奋笔疾书...",
-                        "DeepSeek 裁判正在严厉打分...",
-                        "发现剧情平淡，强制打回重写...",
-                        "修正剧情节奏，强化画面感...",
-                        "添加黄金三秒爆点...",
-                        "整合上下文，处理剧情转折..."
-                    ];
-                    if (ticks % 3 === 0) {
-                        generationStatusText.value = statusTexts[Math.floor(Math.random() * statusTexts.length)];
-                    }
-
-                    try {
-                        const response = await fetch(`/api/task/${taskId}`);
-                        const data = await response.json();
-
-                        if (data.status === 'completed') {
-                            clearInterval(pollInterval);
-                            finishGeneration(data.content, data.word_count);
-                        } else if (data.status === 'failed') {
-                            clearInterval(pollInterval);
-                            alert('生成失败: ' + data.error);
-                            isGenerating.value = false;
-                        }
-                    } catch (error) {
-                        console.error('Polling error:', error);
-                    }
-                }, 3000);
+                } catch(e) {
+                    pushScannerLog("WARN: Polling hiccup, retrying... " + e.message);
+                    console.error("Polling error", e);
+                    setTimeout(pollStatus, 4000);
+                }
             };
 
-            const finishGeneration = (content, count) => {
-                generateProgress.value = 100;
-                generationStatusText.value = '即将完成';
+            // 生成结束清理
+            const finishGeneration = (content) => {
+                isGenerating.value = false;
+                isPaused.value = false;
+                finalContent.value = content;
+                clearInterval(scannerInterval);
+            };
+
+            // 恢复生成 (HITL)
+            const resumeGeneration = async () => {
+                if (!pausedContent.value.trim()) return alert("修改内容不能为空！");
+                isResuming.value = true;
                 
-                setTimeout(() => {
-                    resultContent.value = content;
-                    wordCount.value = count;
-                    isGenerating.value = false;
-                }, 800);
+                try {
+                    const response = await fetch(`/api/task/${taskId.value}/continue`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            modified_content: pausedContent.value
+                        })
+                    });
+                    
+                    if (!response.ok) {
+                        const err = await response.json();
+                        throw new Error(err.detail || "恢复失败");
+                    }
+                    
+                    isPaused.value = false;
+                    isResuming.value = false;
+                    
+                    pushScannerLog("SYS_OVERRIDE: User payload injected. Resuming...");
+                    
+                    // 重启轮询
+                    pollStatus();
+                } catch (e) {
+                    alert('网络通信异常：' + e.message);
+                    isResuming.value = false;
+                }
             };
 
-            const copyContent = () => {
-                navigator.clipboard.writeText(resultContent.value).then(() => {
-                    alert('内容已复制到剪贴板！');
-                });
+            // 控制终端幽灵日志滚动动画
+            const startScannerAnimation = () => {
+                const dummyLogs = [
+                    "Resolving global constraints matrix",
+                    "Injecting structural character traits",
+                    "Running forward predictive modeling (LLM)",
+                    "Tree of Thought (ToT) evaluating branches...",
+                    "Dropping bad branch / Resolving path",
+                    "Inflating sliding window constraint",
+                    "Parsing chapter sequence payload",
+                    "Deep checking logic holes in vector space...",
+                    "Writing narrative bytes to memory",
+                    "Aligning context with worldview settings..."
+                ];
+                scannerLines.value = [];
+                let dummyIndex = 0;
+                
+                if (scannerInterval) clearInterval(scannerInterval);
+                scannerInterval = setInterval(() => {
+                    const now = new Date();
+                    const timestamp = `${String(now.getHours()).padStart(2,'0')}:${String(now.getMinutes()).padStart(2,'0')}:${String(now.getSeconds()).padStart(2,'0')}.${String(now.getMilliseconds()).padStart(3,'0')}`;
+                    pushScannerLog(`[${timestamp}] ${dummyLogs[dummyIndex % dummyLogs.length]}`);
+                    dummyIndex++;
+                }, 1200); // 添加一点随机感的周期
             };
 
-            const downloadContent = () => {
-                const blob = new Blob([resultContent.value], { type: 'text/markdown' });
-                const url = window.URL.createObjectURL(blob);
-                const a = document.createElement('a');
-                a.href = url;
-                a.download = `${form.value.title}.md`;
-                document.body.appendChild(a);
-                a.click();
-                document.body.removeChild(a);
-                window.URL.revokeObjectURL(url);
+            const pushScannerLog = (msg) => {
+                scannerLines.value.push(msg);
+                if (scannerLines.value.length > 20) {
+                    scannerLines.value.shift();
+                }
             };
 
             return {
-                form,
-                isGenerating,
-                generationStatusText,
-                generateProgress,
-                resultContent,
-                renderedContent,
-                wordCount,
-                startGeneration,
-                copyContent,
-                downloadContent
+                title, outline, targetWords, mode, modes, enableCheck, interactive, settings,
+                isGenerating, isPaused, isResuming, pausedContent, resumeGeneration,
+                startGeneration, currentProgress, finalContent, parsedContent,
+                scannerLines, copyContent
             };
         }
     }).mount('#app');
 </script>
+
 </body>
 </html>

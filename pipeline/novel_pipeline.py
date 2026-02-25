@@ -168,7 +168,8 @@ class ContentPipeline:
         settings: Optional[dict] = None,
         target_words: int = 10000,
         title: str = "未命名作品",
-        on_progress: Optional[Callable[[str], None]] = None
+        on_progress: Optional[Callable[[str], None]] = None,
+        on_section_complete: Optional[Callable[[str], str]] = None
     ) -> str:
         """
         运行生成管道
@@ -275,8 +276,13 @@ class ContentPipeline:
                 content, summary = self.writer.generate_chapter(
                     chapter=chapter,
                     settings=dynamic_settings,
-                    previous_summaries=self.context_manager.get_recent_summaries()
+                    # 关键修改：启用高级摘要大脑！抛弃简陋队列，采用带层级压缩和人物检索的 SummaryStore
+                    previous_summaries=[self.summary_store.get_context_for_writing()] 
                 )
+                
+                # 【新增】人机共创断点拦截 (Human-In-The-Loop)
+                if on_section_complete:
+                    content = on_section_complete(content)
                 
                 # 记录摘要
                 word_count = count_words(content)
@@ -287,16 +293,18 @@ class ContentPipeline:
                     word_count=word_count
                 )
                 
-                # 增强版摘要存储
+                # 增强版摘要存储：直接复用 writer 已生成的摘要，避免重复 LLM 调用
                 self.summary_store.add_chapter_summary(
                     chapter_id=chapter.id,
                     title=chapter.title,
                     content=content,
-                    word_count=word_count
+                    word_count=word_count,
+                    pre_summary=summary  # ✅ 复用摘要，节省 token
                 )
                 
-                # 一致性检查与状态更新（如果启用）
-                if self.enable_consistency_check:
+                # 一致性检查与状态更新
+                # 优化：跳过前2章（无足够前文可比对，检查收益低，节省 token）
+                if self.enable_consistency_check and i > 2:
                     console.print("    [dim]🔄 正在提取当前章节人物最新状态...[/dim]")
                     self.checker.update_states_from_content(content)
                     
@@ -309,6 +317,8 @@ class ContentPipeline:
                     
                     if not check_result.passed:
                         console.print(f"    [yellow]⚠️ 发现 {len(check_result.issues)} 个问题[/yellow]")
+                elif self.enable_consistency_check:
+                    console.print("    [dim]⏩ 前2章跳过检查（节省 token）[/dim]")
                 
                 # 保存章节
                 full_chapter = f"# {chapter.title}\n\n{content}"
@@ -557,76 +567,6 @@ class ContentPipeline:
         
         console.print(f"[green]📄 报告已导出: {report_path}[/green]\n")
 
-
-        from rich.prompt import Prompt
-        from rich.table import Table
-        
-        console.print("\n[bold blue]🔍 全文连贯性检查[/bold blue]")
-        console.print("正在分析...\n")
-        
-        # 构建检查提示词
-        check_prompt = self._build_fulltext_check_prompt(content, title)
-        
-        # 调用 LLM 进行检查
-        try:
-            response = self.evaluator_llm.generate(check_prompt)
-            issues = self._parse_check_response(response)
-        except Exception as e:
-            console.print(f"[red]检查失败: {e}[/red]")
-            return content
-        
-        if not issues:
-            console.print("[green]✅ 未发现连贯性问题！文本质量良好。[/green]\n")
-            return content
-        
-        # 显示问题表格
-        table = Table(title=f"发现 {len(issues)} 个问题")
-        table.add_column("ID", style="cyan", width=4)
-        table.add_column("类型", style="magenta", width=10)
-        table.add_column("严重", width=4)
-        table.add_column("位置", width=10)
-        table.add_column("描述", width=40)
-        
-        for i, issue in enumerate(issues, 1):
-            severity_style = {"高": "red", "中": "yellow", "低": "green"}.get(issue.get("severity", "中"), "")
-            table.add_row(
-                str(i),
-                issue.get("type", "未知"),
-                f"[{severity_style}]{issue.get('severity', '中')}[/{severity_style}]",
-                issue.get("location", ""),
-                issue.get("description", "")[:40]
-            )
-        
-        console.print(table)
-        console.print(f"\n📝 总结: {issues[0].get('summary', '请检查上述问题')}\n" if issues else "")
-        
-        # 用户选择
-        console.print("[bold]请选择操作：[/bold]")
-        console.print("  [A] AI 自动修复所有问题")
-        console.print("  [B] 选择性修复（输入问题编号，如: 1,3）")
-        console.print("  [C] 导出检查报告")
-        console.print("  [D] 跳过，保持原文\n")
-        
-        choice = Prompt.ask("请输入选项", choices=["A", "B", "C", "D", "a", "b", "c", "d"])
-        choice = choice.upper()
-        
-        if choice == "A":
-            return self._auto_fix_all(content, issues, title)
-        elif choice == "B":
-            ids_str = Prompt.ask("请输入要修复的问题编号（用逗号分隔）")
-            try:
-                ids = [int(x.strip()) for x in ids_str.split(",")]
-                selected = [issues[i-1] for i in ids if 0 < i <= len(issues)]
-                return self._auto_fix_all(content, selected, title)
-            except (ValueError, IndexError):
-                console.print("[red]输入格式错误[/red]")
-                return content
-        elif choice == "C":
-            self._export_report(issues, title)
-            return content
-        else:
-            console.print("⏭️ 跳过修复，保持原文\n")
-            return content
-    
 # 别名，保持向后兼容
 NovelPipeline = ContentPipeline
+

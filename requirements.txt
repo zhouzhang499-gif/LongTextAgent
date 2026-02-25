@@ -7,6 +7,7 @@ anthropic>=0.18.0    # Claude (可选)
 pyyaml>=6.0          # YAML 配置解析
 tiktoken>=0.5.0      # Token 计数
 rich>=13.0.0         # 终端美化输出
+python-dotenv>=1.0.0 # 从 .env 文件加载环境变量
 
 # API 服务
 fastapi>=0.100.0     # Web 框架

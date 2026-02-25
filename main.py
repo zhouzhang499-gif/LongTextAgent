@@ -13,6 +13,14 @@ from pathlib import Path
 project_root = Path(__file__).parent
 sys.path.insert(0, str(project_root))
 
+# 自动加载 .env 文件（如果存在）——读取 API Key
+try:
+    from dotenv import load_dotenv
+    # 设置 override=True，以使用 .env 中正确的 API Key 覆盖当前终端中错误的临时变量
+    load_dotenv(dotenv_path=project_root / ".env", override=True)
+except ImportError:
+    pass  # python-dotenv 未安装时导用环境变量
+
 from pipeline.novel_pipeline import ContentPipeline
 from utils.llm_client import list_providers
 from rich.console import Console
@@ -71,23 +79,7 @@ def load_outline(filepath: str) -> tuple[str, dict]:
     try:
         data = yaml.safe_load(content)
         if isinstance(data, dict):
-            outline = ""
             settings = {}
-            
-            # 提取大纲
-            if 'outline' in data:
-                outline = data['outline']
-            elif 'chapters' in data:
-                chapters = data['chapters']
-                outline_parts = []
-                for i, ch in enumerate(chapters, 1):
-                    if isinstance(ch, str):
-                        outline_parts.append(f"第{i}章: {ch}")
-                    elif isinstance(ch, dict):
-                        title = ch.get('title', f'第{i}章')
-                        brief = ch.get('brief', '')
-                        outline_parts.append(f"{title}: {brief}")
-                outline = "\n".join(outline_parts)
             
             # 提取设定
             if 'settings' in data:
@@ -95,15 +87,20 @@ def load_outline(filepath: str) -> tuple[str, dict]:
             elif 'characters' in data or 'world' in data:
                 settings = {
                     k: v for k, v in data.items() 
-                    if k not in ['outline', 'chapters', 'title', 'type']
+                    if k not in ['outline', 'chapters', 'title', 'type', 'mode']
                 }
             
-            return outline if outline else content, settings
+            # 如果有 chapters 字段，直接把原始 YAML 文本传给 Planner
+            # Planner 的 _parse_yaml_outline 可以直接解析，无需 LLM
+            if 'chapters' in data or 'outline' in data:
+                return content, settings
+            
     except yaml.YAMLError:
         pass
     
     # 纯文本大纲
     return content, {}
+
 
 
 def main():

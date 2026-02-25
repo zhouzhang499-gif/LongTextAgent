@@ -279,7 +279,8 @@ class Writer:
         system_prompt = self.get_system_prompt(style_guide)
         
         target_words = subtask.target_words
-        initial_target = min(1200, target_words) # 初次并发生成只要求 1200 字左右，保质量
+        # 初次生成目标设为总目标的 80%，减少续写次数（原来固定 1200 字导致平均 3~4 次续写）
+        initial_target = min(int(target_words * 0.8), target_words)
 
         user_prompt_base = f"""{context}
 
@@ -363,7 +364,8 @@ class Writer:
                     try:
                         evaluated_branches.append(future.result())
                     except Exception as e:
-                        pass
+                        import logging
+                        logging.warning(f"Drama分支评分线程崩溃: {e}")
             
             if not evaluated_branches:
                 current_feedback_directive = "评估过程异常，请重试。"
@@ -406,8 +408,8 @@ class Writer:
         while current_words < target_words and continuation_retries < max_continuations:
             console.print(f"      [blue]📊 测算字数: {current_words} / {target_words}。未达标，启动状态机片段续写 (第 {continuation_retries+1} 次膨胀)...[/blue]")
             
-            # 取最后 600 个字符作为滑动窗口上下文
-            sliding_window = accumulated_content[-600:]
+            # 取最后 3000 个字符作为滑动窗口上下文（此前仅为 600，导致视野狭窄、逻辑断层）
+            sliding_window = accumulated_content[-3000:]
             remaining_words = target_words - current_words
             
             # 判定是否为最后一次绝杀收尾
@@ -418,7 +420,11 @@ class Writer:
             else:
                 action_instruction = f"距离本段落设定目标还有 {remaining_words} 字的缺口。请紧接最后一句往下写，**绝对不要收尾！** 可以在这里加入新的拉扯反转、增加环境动作细节、或爆出新的矛盾以扩充篇幅。"
             
-            continue_prompt = f"""
+            continue_prompt = f"""【本作全局设定与本章任务锚点（防止由于截断导致人物设定失忆）】：
+{context}
+
+---
+
 【前文结尾回顾（用于无缝拼接）】：
 ...{sliding_window}
 

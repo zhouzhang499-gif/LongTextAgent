@@ -6,18 +6,27 @@ LongTextAgent API Server
 import os
 import uuid
 from datetime import datetime
-from typing import Optional, List
-from fastapi import FastAPI, HTTPException, BackgroundTasks
+from typing import List, Optional, Dict, Any
+from fastapi import FastAPI, BackgroundTasks, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
 import uvicorn
+import json
+import threading
 
 # 添加项目路径
 import sys
 from pathlib import Path
 project_root = Path(__file__).parent
 sys.path.insert(0, str(project_root))
+
+# 自动加载 .env 文件（如果存在）——读取 API Key
+try:
+    from dotenv import load_dotenv
+    load_dotenv(dotenv_path=project_root / ".env", override=True)
+except ImportError:
+    pass  # python-dotenv 未安装时略过
 
 from pipeline.novel_pipeline import ContentPipeline
 from utils.llm_client import list_providers
@@ -32,6 +41,10 @@ class GenerateRequest(BaseModel):
     mode: str = Field(default="novel", description="生成模式: novel/report/article/document")
     settings: Optional[dict] = Field(default=None, description="背景设定")
     enable_check: bool = Field(default=False, description="是否启用一致性检查")
+    interactive: bool = Field(default=False, description="是否启用人机共创模式(逐章暂停)")
+
+class ContinueRequest(BaseModel):
+    modified_content: str = Field(..., description="用户修改后的章节内容")
 
 
 class GenerateResponse(BaseModel):
@@ -49,6 +62,7 @@ class TaskStatus(BaseModel):
     status: str
     progress: Optional[str] = None
     content: Optional[str] = None
+    paused_content: Optional[str] = None
     word_count: Optional[int] = None
     error: Optional[str] = None
     created_at: str
@@ -85,13 +99,13 @@ tasks_store = {}
 
 # ==================== Helper Functions ====================
 
-def create_pipeline(mode: str = "novel") -> ContentPipeline:
+def create_pipeline(mode: str = "novel", enable_check: bool = True) -> ContentPipeline:
     """创建生成管道"""
     return ContentPipeline(
         config_path="config/settings.yaml",
         modes_path="config/modes.yaml",
         mode=mode,
-        enable_consistency_check=False
+        enable_consistency_check=enable_check
     )
 
 
@@ -100,13 +114,31 @@ def run_generation_task(task_id: str, request: GenerateRequest):
     try:
         tasks_store[task_id]["status"] = "running"
         
-        pipeline = create_pipeline(request.mode)
+        pipeline = create_pipeline(request.mode, request.enable_check)
+        
+        def section_callback(section_text: str) -> str:
+            task = tasks_store.get(task_id)
+            if task and task.get("interactive"):
+                task["status"] = "paused"
+                task["paused_content"] = section_text
+                task["progress"] = "等待人工覆写审核..."
+                task["resume_event"].clear()
+                
+                # 阻塞后台生成线程，直到前端发送 /continue 释放 event
+                task["resume_event"].wait()
+                
+                # 恢复并返回前端注水修改后的文本
+                task["status"] = "running"
+                task["paused_content"] = None
+                return task.get("resumed_content", section_text)
+            return section_text
         
         content = pipeline.run(
             outline=request.outline,
             settings=request.settings,
             target_words=request.target_words,
-            title=request.title
+            title=request.title,
+            on_section_complete=section_callback
         )
         
         # 计算字数
@@ -177,6 +209,10 @@ async def generate(request: GenerateRequest, background_tasks: BackgroundTasks):
         "status": "pending",
         "progress": "等待开始",
         "content": None,
+        "paused_content": None,
+        "resumed_content": None,
+        "interactive": request.interactive,
+        "resume_event": threading.Event(),
         "word_count": None,
         "error": None,
         "created_at": datetime.now().isoformat(),
@@ -199,7 +235,29 @@ async def get_task_status(task_id: str):
     if task_id not in tasks_store:
         raise HTTPException(status_code=404, detail="任务不存在")
     
-    return TaskStatus(**tasks_store[task_id])
+    # 动态构建返回避免不可序列化的对象（如Event）抛锚
+    task_data = tasks_store[task_id].copy()
+    if "resume_event" in task_data:
+        del task_data["resume_event"]
+        
+    return TaskStatus(**task_data)
+
+
+@app.post("/api/task/{task_id}/continue")
+async def continue_task(task_id: str, request: ContinueRequest):
+    """人机共创中断恢复接口"""
+    if task_id not in tasks_store:
+        raise HTTPException(status_code=404, detail="任务不存在")
+    
+    task = tasks_store[task_id]
+    if task["status"] != "paused":
+        raise HTTPException(status_code=400, detail="任务当前并未挂起")
+        
+    task["resumed_content"] = request.modified_content
+    task["progress"] = "吸收修改完毕，继续推进..."
+    task["resume_event"].set()
+    
+    return {"status": "success", "message": "任务已恢复"}
 
 
 @app.post("/api/quick")
@@ -307,16 +365,19 @@ async def health_check():
 # ==================== Main ====================
 
 if __name__ == "__main__":
+    # 从环境变量读取端口，默认 8888（避免硬编码端口冲突）
+    port = int(os.getenv("PORT", "8888"))
+    
     print("=" * 50)
     print("LongTextAgent API Server")
     print("=" * 50)
-    print("=" * 50)
-    print("Endpoints:")
-    print("  - http://localhost:8888/         (创作台 Web UI)")
-    print("  - http://localhost:8888/api/quick    (快速生成)")
-    print("  - http://localhost:8888/api/generate (异步生成)")
-    print("  - http://localhost:8888/api/xiaoyi   (小艺专用)")
-    print("  - http://localhost:8888/docs         (API文档)")
+    print(f"Endpoints:")
+    print(f"  - http://localhost:{port}/         (创作台 Web UI)")
+    print(f"  - http://localhost:{port}/api/quick    (快速生成)")
+    print(f"  - http://localhost:{port}/api/generate (异步生成)")
+    print(f"  - http://localhost:{port}/api/xiaoyi   (小艺专用)")
+    print(f"  - http://localhost:{port}/docs         (API文档)")
     print("=" * 50)
     
-    uvicorn.run(app, host="0.0.0.0", port=8888)
+    uvicorn.run(app, host="0.0.0.0", port=port)
+

@@ -85,7 +85,7 @@ class ConsistencyChecker:
                 with open(prompts_path, 'r', encoding='utf-8') as f:
                     self.prompts = yaml.safe_load(f).get("checker", {})
         except Exception as e:
-            print(f"[-] 警告：加载 checker 提示词模板失败 ({e})，将使用默认内置模板。") or SettingsStore()
+            print(f"[-] 警告：加载 checker 提示词模板失败 ({e})，将使用默认内置模板。")
     
     def check_content(
         self,
@@ -112,8 +112,8 @@ class ConsistencyChecker:
         issues.extend(name_issues)
         checked_items += 1
         
-        # 2. 检查人物行为一致性
-        if self.settings_store.characters:
+        # 2. 检查人物行为一致性（需先确认 settings_store 不为 None）
+        if self.settings_store and self.settings_store.characters:
             behavior_issues = self._check_character_behavior(content)
             issues.extend(behavior_issues)
             checked_items += 1
@@ -124,8 +124,8 @@ class ConsistencyChecker:
             issues.extend(continuity_issues)
             checked_items += 1
         
-        # 4. 检查设定冲突
-        if self.settings_store.world_settings:
+        # 4. 检查设定冲突（需先确认 settings_store 不为 None）
+        if self.settings_store and self.settings_store.world_settings:
             setting_issues = self._check_settings_conflict(content)
             issues.extend(setting_issues)
             checked_items += 1
@@ -163,7 +163,7 @@ class ConsistencyChecker:
 {", ".join(known_names)}
 
 【最新章节内容】
-{content[:4000]}
+{content}
 
 请严格按以下JSON格式输出，只包含有状态变化的人物：
 ```json
@@ -205,7 +205,7 @@ class ConsistencyChecker:
 只输出名称，不需要其他说明。
 
 【内容】
-{content[:3000]}
+{content}
 
 【人物名称】"""
         
@@ -267,7 +267,7 @@ class ConsistencyChecker:
 {chr(10).join(character_info)}
 
 【待检查内容】
-{content[:3000]}
+{content}
 
 如果发现不一致，请说明：
 1. 哪个人物
@@ -298,9 +298,9 @@ class ConsistencyChecker:
         """检查连续性"""
         issues = []
         
-        # 取前文末尾
-        prev_excerpt = previous_content[-1500:] if len(previous_content) > 1500 else previous_content
-        curr_excerpt = content[:1500]
+        # 取前文末尾（扩大视野到3000字，保障更宏观的衔接检查）
+        prev_excerpt = previous_content[-3000:] if len(previous_content) > 3000 else previous_content
+        curr_excerpt = content[:3000]
         
         prompt = f"""请检查以下两段内容的连续性，是否存在：
 1. 场景突变（无过渡地切换场景）
@@ -342,7 +342,7 @@ class ConsistencyChecker:
 {world_context}
 
 【待检查内容】
-{content[:3000]}
+{content}
 
 如果发现冲突，请说明：
 1. 哪条设定被违反
@@ -379,7 +379,7 @@ class ConsistencyChecker:
         prompt = f"""作为一位资深编辑，请检查以下小说内容的逻辑问题：
 {context}
 【待检查内容】
-{content[:4000]}
+{content}
 
 请检查：
 1. 是否有逻辑漏洞（前后矛盾）
@@ -508,13 +508,13 @@ class ConsistencyChecker:
                 for k, v in world_settings.items():
                     context.append(f"- {k}: {v}")
                     
-            characters = self.settings_store.get_all_characters()
+            characters = self.settings_store.get_all_characters()  # 返回 List[CharacterProfile]
             if characters:
                 context.append("\n【主要人物】")
-                for name, info in characters.items():
-                    context.append(f"- {name}: {info['description']}")
-                    if info['traits']:
-                        context.append(f"  性格: {', '.join(info['traits'])}")
+                for char in characters:  # 正确：遍历 CharacterProfile 对象
+                    context.append(f"- {char.name}: {char.description}")
+                    if char.traits:
+                        context.append(f"  性格: {', '.join(char.traits)}")
         
         context_str = "\n".join(context) if context else "无可用设定信息"
         
@@ -559,7 +559,9 @@ class ConsistencyChecker:
         template = self.prompts.get("deep_check", default_prompt)
         try:
             return template.format(context_str=context_str, title=title, content=content)
-        except Exception:
+        except Exception as e:
+            import logging
+            logging.debug(f"deep_check 模板格式化失败（{e}），回退默认 prompt")
             return default_prompt
 
     def _parse_check_response(self, response: str) -> List[ConsistencyIssue]:

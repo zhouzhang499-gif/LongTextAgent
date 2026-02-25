@@ -181,7 +181,9 @@ chapters:
             try:
                 # 若外部模板未定义参数，使用 format 可能抛出 KeyError，这里做回退
                 prompt = template.format(chunk_text=chunk_text, words_per_chunk=words_per_chunk)
-            except Exception:
+            except Exception as e:
+                import logging
+                logging.debug(f"parse_chunk 模板格式化失败（{e}），回退默认 prompt")
                 prompt = default_prompt
 
             response = self.llm.generate(prompt, max_tokens=2048)
@@ -227,10 +229,13 @@ chapters:
         # 5. 组装成最终的 Plan
         # 尝试从全文提取书名（轻量级）
         title_prompt = f"请为以下大纲提取或拟定一个作品标题：\n{outline_text[:1000]}\n只输出标题字符串，不要任何引号或多余文字。"
+        global_title = "未命名作品"  # 默认值，防止 try 失败后变量未定义
         try:
             global_title = self.llm.generate(title_prompt, max_tokens=50).strip(' "【】\n')
-        except:
-            pass
+        except Exception as e:
+            import logging
+            logging.warning(f"自动提取作品标题失败: {e}，使用默认标题")
+
             
         final_yaml_struct = {
             'title': global_title,
@@ -356,7 +361,9 @@ subtasks:
                 target_words=chapter.target_words,
                 words_per_subtask=words_per_subtask
             )
-        except Exception:
+        except Exception as e:
+            import logging
+            logging.debug(f"decompose_chapter 模板格式化失败（{e}），回退默认 prompt")
             prompt = default_prompt
 
         response = self.llm.generate(prompt)
@@ -370,6 +377,11 @@ subtasks:
         
         try:
             data = yaml.safe_load(yaml_text)
+            # 安全检查：yaml.safe_load 可能返回 None（空内容）或非 dict（纯字符串）
+            if not isinstance(data, dict):
+                import logging
+                logging.warning(f"LLM 返回的子任务 YAML 格式无效，回退默认子任务划分")
+                return self._create_default_subtasks(chapter, num_subtasks, words_per_subtask)
             subtasks_data = data.get('subtasks', [])
             
             subtasks = []

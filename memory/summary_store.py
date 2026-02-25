@@ -102,7 +102,8 @@ class SummaryStore:
         chapter_id: int,
         title: str,
         content: str,
-        word_count: int = 0
+        word_count: int = 0,
+        pre_summary: str = ""
     ) -> SummaryEntry:
         """
         添加章节级摘要
@@ -112,13 +113,16 @@ class SummaryStore:
             title: 章节标题
             content: 章节内容
             word_count: 字数
+            pre_summary: 预生成的摘要（可选）。若提供则跳过 LLM 摘要生成，节省 token
         
         Returns:
             创建的摘要条目
         """
-        summary = self._generate_summary(content, max_words=300)
+        # 若外部已生成摘要（writer.summarize_section），直接复用，避免重复调用 LLM
+        summary = pre_summary if pre_summary else self._generate_summary(content, max_words=300)
         key_points = self._extract_key_points(content)
         characters = self._extract_characters(content)
+
         
         entry = SummaryEntry(
             id=chapter_id,
@@ -147,7 +151,7 @@ class SummaryStore:
 摘要应保留关键信息：主要事件、人物行动、重要转折。
 
 【原文】
-{content[:3000]}  # 限制输入长度
+{content[:3000]}
 
 【摘要】"""
         

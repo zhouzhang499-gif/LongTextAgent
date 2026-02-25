@@ -33,14 +33,16 @@ def count_words(text: str) -> int:
     Returns:
         等效字数
     """
-    # 分离中文和非中文部分
-    chinese_chars = re.findall(r'[\u4e00-\u9fff]', text)
+    # 为了防止因为标点符号全被丢弃而导致 Writer 端由于“字数不足”拼命注水
+    # 这里直接采用标准排版字数计算公式：剔除空白符后的长度 + 英文独立单词补正
     
-    # 英文单词
-    text_no_chinese = re.sub(r'[\u4e00-\u9fff]', ' ', text)
-    english_words = text_no_chinese.split()
+    text_no_space = re.sub(r'\s+', '', text)
+    base_length = len(text_no_space)
     
-    return len(chinese_chars) + len(english_words)
+    # 因为上一步把所有的英文字母连在一起算成了“1个字符”
+    # 下面稍微做下英文的粗略补正（中文为主的场景下，可以简单不修，或做一个极简修正均可）
+    # 但为了最高效和准确，我们直接返回剔除空白符后的实际排版可视字符数
+    return base_length
 
 
 def split_into_paragraphs(text: str) -> List[str]:

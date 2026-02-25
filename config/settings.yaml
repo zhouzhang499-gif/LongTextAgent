@@ -1,10 +1,13 @@
 # LongTextAgent 配置文件
+# ⚠️ 安全提示：API Key 请通过环境变量设置，勿明文写入此文件
+#   Windows PowerShell:  $env:MOONSHOT_API_KEY="sk-xxx"
+#   Linux/Mac:           export MOONSHOT_API_KEY=sk-xxx
 
 # LLM 配置
 generator_llm:
   # 提供商: moonshot
   provider: moonshot
-  api_key: "sk-mkZS1LNZGtmeJR45vXxFmNQo1oz3yEfJ8cy1h5dIcHfyqbcn"
+  api_key: "${MOONSHOT_API_KEY}" # 从环境变量读取
   model: moonshot-v1-8k
   temperature: 0.7
   max_tokens: 4096
@@ -12,7 +15,7 @@ generator_llm:
 evaluator_llm:
   # 提供商: deepseek
   provider: deepseek
-  api_key: "sk-f1a4a5d4cec04819a0981ffbe613b029"
+  api_key: "${DEEPSEEK_API_KEY}" # 从环境变量读取
   model: deepseek-chat
   temperature: 0.7
   max_tokens: 4096
@@ -22,8 +25,8 @@ generation:
   # 每个子任务的目标字数
   words_per_section: 2500
   # 最小/最大字数容差
-  min_words_tolerance: 0.8   # 2000字
-  max_words_tolerance: 1.2   # 3000字
+  min_words_tolerance: 0.8 # 2000字
+  max_words_tolerance: 1.2 # 3000字
   # 摘要最大长度（字）
   summary_max_words: 300
 
