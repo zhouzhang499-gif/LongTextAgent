@@ -464,6 +464,12 @@ class Writer:
 
 【摘要】"""
         
+        template = self.prompts.get("summarize_section", default_prompt)
+        try:
+            prompt = template.format(max_words=max_words, content=content)
+        except Exception:
+            prompt = default_prompt
+            
         return self.llm.generate(prompt, max_tokens=1024)
     
     def generate_chapter(
